@@ -1,0 +1,69 @@
+//! Product colors shared by GPUI Component and Base; no per-view literal colors.
+use gpui_kit::component::{Theme, ThemeMode};
+use gpui_kit::{App, Window, rgb, rgba};
+
+pub fn change(mode: ThemeMode, window: Option<&mut Window>, cx: &mut App) {
+    Theme::change(mode, None, cx);
+    let dark = mode.is_dark();
+    let theme = Theme::global_mut(cx);
+    let c = &mut theme.colors;
+    c.background = rgb(if dark { 0x182329 } else { 0xf4f5f2 }).into();
+    c.foreground = rgb(if dark { 0xdae5e3 } else { 0x243b38 }).into();
+    c.muted = rgb(if dark { 0x223238 } else { 0xe9eeea }).into();
+    c.muted_foreground = rgb(if dark { 0xa2b8b3 } else { 0x586f68 }).into();
+    c.border = rgba(if dark { 0xc4e4db25 } else { 0x234e3e26 }).into();
+    c.accent = rgb(if dark { 0x284740 } else { 0xdceee5 }).into();
+    c.accent_foreground = c.foreground;
+    c.primary = rgb(if dark { 0x64cbb3 } else { 0x167963 }).into();
+    c.primary_hover = rgb(if dark { 0x80dac4 } else { 0x126b57 }).into();
+    c.primary_active = rgb(if dark { 0x50b89f } else { 0x105845 }).into();
+    c.primary_foreground = rgb(if dark { 0x12332b } else { 0xf5fbf7 }).into();
+    c.secondary = c.muted;
+    c.secondary_foreground = c.foreground;
+    c.secondary_hover = c.accent;
+    c.secondary_active = c.accent;
+    c.button = rgb(if dark { 0x25373d } else { 0xfafbf8 }).into();
+    c.button_foreground = c.foreground;
+    c.button_hover = c.accent;
+    c.button_active = c.muted;
+    c.button_primary = c.primary;
+    c.button_primary_hover = c.primary_hover;
+    c.button_primary_active = c.primary_active;
+    c.button_primary_foreground = c.primary_foreground;
+    c.button_secondary = c.secondary;
+    c.button_secondary_foreground = c.foreground;
+    c.button_secondary_hover = c.secondary_hover;
+    c.button_secondary_active = c.secondary_active;
+    c.success = rgb(if dark { 0x91ceb4 } else { 0x22734e }).into();
+    c.danger = rgb(if dark { 0xf09c91 } else { 0xbb5246 }).into();
+    c.danger_foreground = c.primary_foreground;
+    c.danger_hover = c.danger;
+    c.danger_active = c.danger;
+    c.button_danger = c.danger;
+    c.button_danger_foreground = c.danger_foreground;
+    c.button_danger_hover = c.danger;
+    c.button_danger_active = c.danger;
+    c.warning = rgb(if dark { 0xe4c17b } else { 0x91621e }).into();
+    c.popover = rgb(if dark { 0x223238 } else { 0xfafbf8 }).into();
+    c.popover_foreground = c.foreground;
+    c.group_box = c.muted;
+    c.group_box_foreground = c.foreground;
+    c.progress_bar = c.primary;
+    c.ring = c.primary;
+    c.input = c.border;
+    c.link = c.primary;
+    c.link_hover = c.primary_hover;
+    c.link_active = c.primary_active;
+    c.list = c.background;
+    c.list_hover = c.muted;
+    c.list_active = c.accent;
+    c.list_active_border = c.border;
+    c.scrollbar_thumb = c.border;
+    c.scrollbar_thumb_hover = c.muted_foreground;
+    theme.tokens = (&theme.colors).into();
+    theme.shadow = !dark;
+    Theme::sync_base(cx);
+    if let Some(window) = window {
+        window.refresh();
+    }
+}
