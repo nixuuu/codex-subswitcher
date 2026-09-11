@@ -22,10 +22,16 @@ pub struct Tray {
 impl Global for Tray {}
 
 pub fn show(cx: &mut App) {
+    crate::dock::show();
     cx.activate(true);
     for handle in cx.windows() {
         let _ = handle.update(cx, |_, window, _| window.activate_window());
     }
+}
+
+pub fn hide(cx: &mut App) {
+    cx.hide();
+    crate::dock::hide();
 }
 
 pub(super) fn status_for(
@@ -153,7 +159,7 @@ pub fn install(cx: &mut App) -> anyhow::Result<()> {
                     if event.id == show_id {
                         self::show(cx);
                     } else if event.id == hide_id {
-                        cx.hide();
+                        self::hide(cx);
                     } else if event.id == quit_id {
                         cx.quit();
                     }
@@ -165,7 +171,7 @@ pub fn install(cx: &mut App) -> anyhow::Result<()> {
         }
     });
     cx.on_action(|_: &Show, cx| self::show(cx));
-    cx.on_action(|_: &Hide, cx| cx.hide());
+    cx.on_action(|_: &Hide, cx| self::hide(cx));
     cx.on_action(|_: &Quit, cx| cx.quit());
     cx.bind_keys([
         KeyBinding::new("cmd-h", Hide, None),

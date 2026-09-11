@@ -20,7 +20,7 @@ Do pracy nad kodem: `cargo run --locked`. Paczka aplikacji jest podpisywana ad h
 3. Wybierz jeden sposób połączenia terminala opisany poniżej.
 4. Przy wyczerpaniu limitu kliknij **Przełącz** przy drugim koncie. Kolejne żądanie użyje tego konta. Nie ma automatycznego przełączania ani ponawiania generacji po błędzie limitu.
 
-Aplikacja musi pozostawać uruchomiona podczas używania proxy. Czerwony przycisk zamknięcia okna chowa ją do paska menu macOS, zachowując stan okna, proxy i odświeżanie limitów. Menu **⇄** pokazuje aktywne konto, jego limity i terminy resetów bez otwierania okna. Kliknij je, aby wybrać **Pokaż okno**, **Schowaj okno** lub **Zakończ Codex Sub Switcher**. Ponowne otwarcie aplikacji z Docka również przywraca okno. Dopiero **Zakończ** lub **⌘Q** zatrzymuje proxy. Żółty przycisk zachowuje standardową minimalizację macOS do Docka. Jeśli utworzenie ikony tray’a zawiedzie, zamknięcie okna nadal kończy aplikację, aby nie zostawić jej bez dostępu do sterowania.
+Aplikacja musi pozostawać uruchomiona podczas używania proxy. Czerwony przycisk zamknięcia okna chowa ją do paska menu macOS, usuwa ikonę z Docka oraz zachowuje stan okna, proxy i odświeżanie limitów. Menu **⇄** pokazuje aktywne konto, jego limity i terminy resetów bez otwierania okna. Kliknij je, aby wybrać **Pokaż okno**, **Schowaj okno** lub **Zakończ Codex Sub Switcher**. Ponowne pokazanie okna z menu paska przywraca ikonę w Docku. Dopiero **Zakończ** lub **⌘Q** zatrzymuje proxy. Żółty przycisk zachowuje standardową minimalizację macOS do Docka. Jeśli utworzenie ikony tray’a zawiedzie, zamknięcie okna nadal kończy aplikację, aby nie zostawić jej bez dostępu do sterowania.
 
 ### Bez zmiany konfiguracji
 

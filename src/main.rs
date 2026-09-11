@@ -1,5 +1,6 @@
 mod accounts;
 mod config;
+mod dock;
 mod launcher;
 mod palette;
 mod proxy;
@@ -424,7 +425,7 @@ fn main() {
             if let Err(e) = cx.open_window(options, |window, cx| {
                 if tray_available {
                     window.on_window_should_close(cx, |_, cx| {
-                        cx.hide();
+                        tray::hide(cx);
                         false
                     });
                 }

@@ -1138,6 +1138,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "chrono",
+ "cocoa 0.26.0",
  "fs2",
  "futures-util",
  "gpui-kit",
