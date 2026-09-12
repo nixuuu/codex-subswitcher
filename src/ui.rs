@@ -88,17 +88,17 @@ impl Switcher {
         #[cfg(debug_assertions)]
         let fresh = fresh || demo_mode();
         let id = account.id.clone();
-        let email = account.email.clone();
+        let account_label = account.display_label();
         Button::new(SharedString::from(format!("reset-{id}"))).small()
             .label(if pending {"Retry reset"} else {"Use reset"})
             .disabled(self.busy || self.usage_loading || (!pending && (!fresh || credit_id.is_none())))
             .on_click(cx.listener(move |_,_,window,cx| {
-                let id=id.clone(); let email=email.clone(); let credit_id=credit_id.clone(); let expiry=expiry.clone(); let entity=cx.entity().downgrade();
+                let id=id.clone(); let account_label=account_label.clone(); let credit_id=credit_id.clone(); let expiry=expiry.clone(); let entity=cx.entity().downgrade();
                 window.open_alert_dialog(cx,move |dialog,_,_| {
                     let id=id.clone(); let credit_id=credit_id.clone(); let entity=entity.clone();
                     dialog.title(if pending {"Retry reset?"} else {"Use a limit reset?"})
                         .button_props(DialogButtonProps::default().ok_text(if pending {"Retry"}else{"Use 1 reset"}).show_cancel(true).cancel_text("Cancel"))
-                        .child(if pending {format!("Check or complete the previous reset for {email}, using the same reset credit and operation ID.")}else{format!("Account: {email}. {expiry}. This uses the available reset credit that expires first to reset Codex limits (weekly and 5h, where available). This cannot be undone.")})
+                        .child(if pending {format!("Check or complete the previous reset for {account_label}, using the same reset credit and operation ID.")}else{format!("{account_label}. {expiry}. This uses the available reset credit that expires first to reset Codex limits (weekly and 5h, where available). This cannot be undone.")})
                         .on_ok(move |_,_,cx| {let id=id.clone();let credit_id=credit_id.clone();let _=entity.update(cx,|this,cx|this.reset_account(id,credit_id,cx));true})
                 });
             }))
@@ -126,7 +126,7 @@ impl Switcher {
         content = content.child(
             div()
                 .text_color(theme.muted_foreground)
-                .child(account.email.clone()),
+                .child(account.display_label()),
         );
         if let Some(details) = data.and_then(|d| d.reset_details.as_ref()) {
             let next = details.next(self.now);
@@ -232,7 +232,7 @@ impl Switcher {
                 div()
                     .truncate()
                     .font_weight(FontWeight::MEDIUM)
-                    .child(account.email.clone()),
+                    .child(account.display_label()),
             )
             .child(
                 div()
@@ -249,6 +249,29 @@ impl Switcher {
                         d.child(badge("Active", theme.success, theme.accent))
                     }),
             );
+        let email = account.email.clone();
+        let account_label = account.display_label();
+        let identity = identity.child(
+            Button::new(SharedString::from(format!("show-email-{id}")))
+                .small()
+                .ghost()
+                .label("Show email")
+                .on_click(cx.listener(move |_, _, window, cx| {
+                    let email = email.clone();
+                    let account_label = account_label.clone();
+                    window.open_alert_dialog(cx, move |dialog, _, _| {
+                        dialog
+                            .title(account_label.clone())
+                            .button_props(
+                                DialogButtonProps::default()
+                                    .ok_text("Hide email")
+                                    .show_cancel(false),
+                            )
+                            .child(email.clone())
+                            .on_ok(|_, _, _| true)
+                    });
+                })),
+        );
         let actions = div()
             .flex()
             .flex_col()

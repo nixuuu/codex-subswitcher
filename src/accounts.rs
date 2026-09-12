@@ -18,6 +18,12 @@ pub struct Account {
     pub email: String,
     pub plan: String,
 }
+impl Account {
+    /// Stable screen-safe identity derived from the profile hash, never the email.
+    pub fn display_label(&self) -> String {
+        format!("Account {}", self.id.chars().take(8).collect::<String>())
+    }
+}
 pub struct Credential {
     bytes: Vec<u8>,
     pub account: Account,
@@ -364,6 +370,24 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
 pub(crate) mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn display_label_is_stable_and_does_not_expose_email() {
+        let mut account = Credential::parse(fixture("workspace", "private-user", "one"))
+            .unwrap()
+            .account;
+        let label = account.display_label();
+        assert_eq!(label, format!("Account {}", &account.id[..8]));
+        assert!(!label.contains("private-user"));
+        assert!(!label.contains("example.test"));
+        account.email = "different@private.test".into();
+        assert_eq!(account.display_label(), label);
+        let other = Credential::parse(fixture("other-workspace", "private-user", "two"))
+            .unwrap()
+            .account;
+        assert_ne!(other.display_label(), label);
+    }
+
     pub fn fixture(workspace: &str, user: &str, marker: &str) -> Vec<u8> {
         let jwt = |v: Value| {
             format!(

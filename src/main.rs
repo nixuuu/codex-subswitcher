@@ -249,7 +249,7 @@ impl Switcher {
                                         title: "Account limits have reset".into(),
                                         body: format!(
                                             "{} · {}: 100% of the limit is available again after refreshing.",
-                                            account.email,
+                                            account.display_label(),
                                             resets.join(", ")
                                         )
                                         .into(),

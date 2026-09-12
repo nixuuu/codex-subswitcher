@@ -4,6 +4,8 @@ A native macOS app built with Rust and GPUI Kit for switching subscription accou
 
 The app interface is in English, including menus, dialogs, notifications, and error messages. Dialogs provided by macOS or your browser may follow the system language.
 
+Account email addresses are hidden by default. Rows, account details, reset confirmations, menu bar text and tooltips, and system notifications use a stable label such as **Account a1b2c3d4**. Click **Show email** on a specific account to reveal its address in a dialog; **Hide email** or closing the dialog hides it again. Revealing an address does not change the menu bar or notifications, and is not remembered after restarting. Browser sign-in pages are outside this protection.
+
 ![Account overview with synthetic demo accounts](docs/compact-dark.png)
 
 ## Getting started

@@ -124,7 +124,7 @@ pub(super) fn status_for(
     }
     Status {
         title: title_for(view),
-        account: format!("{} · {}", account.email, account.plan),
+        account: format!("{} · {}", account.display_label(), account.plan),
         lines,
     }
 }
@@ -289,7 +289,8 @@ mod tests {
         };
         let status = status_for(Some(&account), Some(&view), false, chrono::Utc::now());
         assert_eq!(status.title, "—%");
-        assert!(status.account.contains("demo@example.test"));
+        assert_eq!(status.account, "Account aaaaaaaa · pro");
+        assert!(!status.account.contains(&account.email));
         assert!(
             status
                 .lines
@@ -327,7 +328,8 @@ mod tests {
         assert_eq!(first_status.title, "40%");
         let second_status = status_for(Some(&second), Some(&view(&[(604800, 9.0)])), false, now);
         assert_eq!(second_status.title, "91%");
-        assert!(second_status.account.contains("second@example.test"));
+        assert_eq!(second_status.account, "Account bbbbbbbb · pro");
+        assert!(!second_status.account.contains(&second.email));
         assert_eq!(status_for(Some(&second), None, true, now).title, "—%");
         assert_eq!(
             status_for(None, Some(&view(&[(18000, 60.0)])), false, now).title,
