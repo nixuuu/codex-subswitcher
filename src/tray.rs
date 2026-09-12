@@ -1,11 +1,11 @@
 //! The status item lives for the application lifetime, independently of window visibility.
 use gpui_kit::*;
 use tray_icon::{
-    TrayIcon, TrayIconBuilder,
+    MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent,
     menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem},
 };
 
-gpui_kit::actions!(switcher_tray, [Show, Hide, Quit]);
+gpui_kit::actions!(switcher_tray, [Show, Hide, Settings, Quit]);
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Status {
@@ -17,22 +17,41 @@ pub struct Status {
 pub struct Tray {
     _icon: TrayIcon,
     _events: Task<()>,
-    actions: [MenuItem; 3],
     status: Option<Status>,
 }
 impl Global for Tray {}
 
 pub fn show(cx: &mut App) {
-    crate::dock::show();
-    cx.activate(true);
-    for handle in cx.windows() {
-        let _ = handle.update(cx, |_, window, _| window.activate_window());
-    }
+    crate::windows::show_panel(cx);
 }
 
 pub fn hide(cx: &mut App) {
+    crate::windows::close_panel(cx);
     cx.hide();
-    crate::dock::hide();
+}
+
+pub fn available(cx: &App) -> bool {
+    cx.try_global::<Tray>().is_some()
+}
+
+pub fn anchor(cx: &App) -> Option<Bounds<Pixels>> {
+    let tray = cx.try_global::<Tray>()?;
+    let rect = tray._icon.rect()?;
+    // tray-icon reports physical coordinates; GPUI window bounds use points.
+    let mtm = objc2::MainThreadMarker::new()?;
+    let item = tray._icon.ns_status_item()?;
+    // Access stays on the AppKit main thread and retains the status item/window.
+    let scale = item.button(mtm)?.window()?.backingScaleFactor();
+    Some(Bounds::new(
+        point(
+            px((rect.position.x / scale) as f32),
+            px((rect.position.y / scale) as f32),
+        ),
+        size(
+            px((rect.size.width as f64 / scale) as f32),
+            px((rect.size.height as f64 / scale) as f32),
+        ),
+    ))
 }
 
 fn title_for(view: Option<&crate::UsageView>) -> String {
@@ -137,47 +156,29 @@ pub fn update(status: Status, cx: &mut App) {
     if tray.status.as_ref() == Some(&status) {
         return;
     }
-    let heading = MenuItem::new(&status.account, false, None);
-    let lines = status
-        .lines
-        .iter()
-        .map(|line| MenuItem::new(line, false, None))
-        .collect::<Vec<_>>();
-    let separator = PredefinedMenuItem::separator();
-    let bottom = PredefinedMenuItem::separator();
-    let mut items: Vec<&dyn tray_icon::menu::IsMenuItem> = vec![&heading];
-    items.extend(lines.iter().map(|i| i as &dyn tray_icon::menu::IsMenuItem));
-    items.extend([
-        &separator as &dyn tray_icon::menu::IsMenuItem,
-        &tray.actions[0],
-        &tray.actions[1],
-        &bottom,
-        &tray.actions[2],
-    ]);
-    if let Ok(menu) = Menu::with_items(&items) {
-        tray._icon.set_title(Some(&status.title));
-        tray._icon.set_menu(Some(Box::new(menu)));
-        let _ = tray._icon.set_tooltip(Some(format!(
-            "Codex Sub Switcher\n{}\n{}",
-            status.account,
-            status.lines.join("\n")
-        )));
-        tray.status = Some(status);
-    }
+    tray._icon.set_title(Some(&status.title));
+    let _ = tray._icon.set_tooltip(Some(format!(
+        "Codex Sub Switcher\n{}\n{}",
+        status.account,
+        status.lines.join("\n")
+    )));
+    tray.status = Some(status);
 }
 
 pub fn install(cx: &mut App) -> anyhow::Result<()> {
-    let show = MenuItem::new("Show window", true, None);
-    let hide = MenuItem::new("Hide window", true, None);
+    let show = MenuItem::new("Accounts", true, None);
+    let settings = MenuItem::new("Settings…", true, None);
     let quit = MenuItem::new("Quit Codex Sub Switcher", true, None);
-    let menu = Menu::with_items(&[&show, &hide, &PredefinedMenuItem::separator(), &quit])?;
+    let menu = Menu::with_items(&[&show, &settings, &PredefinedMenuItem::separator(), &quit])?;
     let icon = TrayIconBuilder::new()
         .with_title("—%")
         .with_tooltip("Codex Sub Switcher")
         .with_menu(Box::new(menu))
+        .with_menu_on_left_click(false)
         .build()?;
     let show_id = show.id().clone();
-    let hide_id = hide.id().clone();
+    let settings_id = settings.id().clone();
+    let icon_id = icon.id().clone();
     let quit_id = quit.id().clone();
     let events = cx.spawn(async move |cx| {
         loop {
@@ -189,8 +190,8 @@ pub fn install(cx: &mut App) -> anyhow::Result<()> {
                 cx.update(|cx| {
                     if event.id == show_id {
                         self::show(cx);
-                    } else if event.id == hide_id {
-                        self::hide(cx);
+                    } else if event.id == settings_id {
+                        crate::windows::show_settings(cx);
                     } else if event.id == quit_id {
                         cx.quit();
                     }
@@ -199,17 +200,32 @@ pub fn install(cx: &mut App) -> anyhow::Result<()> {
                     return;
                 }
             }
+            for event in TrayIconEvent::receiver().try_iter().take(32) {
+                if let TrayIconEvent::Click {
+                    id,
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } = event
+                    && id == icon_id
+                {
+                    cx.update(crate::windows::toggle_panel);
+                }
+            }
         }
     });
     cx.on_action(|_: &Show, cx| self::show(cx));
     cx.on_action(|_: &Hide, cx| self::hide(cx));
+    cx.on_action(|_: &Settings, cx| crate::windows::show_settings(cx));
     cx.on_action(|_: &Quit, cx| cx.quit());
     cx.bind_keys([
         KeyBinding::new("cmd-h", Hide, None),
         KeyBinding::new("cmd-q", Quit, None),
+        KeyBinding::new("cmd-,", Settings, None),
     ]);
     cx.set_menus([gpui_kit::Menu::new("Codex Sub Switcher").items([
-        gpui_kit::MenuItem::action("Show window", Show),
+        gpui_kit::MenuItem::action("Accounts", Show),
+        gpui_kit::MenuItem::action("Settings…", Settings),
         gpui_kit::MenuItem::action("Hide window", Hide),
         gpui_kit::MenuItem::separator(),
         gpui_kit::MenuItem::action("Quit Codex Sub Switcher", Quit),
@@ -217,7 +233,6 @@ pub fn install(cx: &mut App) -> anyhow::Result<()> {
     cx.set_global(Tray {
         _icon: icon,
         _events: events,
-        actions: [show, hide, quit],
         status: None,
     });
     Ok(())

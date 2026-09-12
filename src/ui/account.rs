@@ -134,7 +134,6 @@ impl Switcher {
     pub(super) fn account_row(
         &self,
         account: &accounts::Account,
-        wide: bool,
         cx: &Context<Self>,
     ) -> Stateful<Div> {
         let theme = cx.theme();
@@ -148,6 +147,16 @@ impl Switcher {
         let data = view.and_then(|v| v.data.as_ref());
         let id = account.id.clone();
         let toggle_id = id.clone();
+        let count = data.and_then(|d| {
+            d.reset_details
+                .as_ref()
+                .map(|d| d.available_count)
+                .or_else(|| {
+                    d.rate_limit_reset_credits
+                        .as_ref()
+                        .map(|c| c.available_count)
+                })
+        });
         let email = account.email.clone();
         let account_label = account.display_label();
         let reveal_email = icon_action(
@@ -168,80 +177,62 @@ impl Switcher {
                     .on_ok(|_, _, _| true)
             });
         }));
-        let identity = div()
-            .min_w_0()
-            .flex()
-            .flex_col()
-            .gap_1()
-            .when(wide, |d| {
-                d.w(px(tokens::ACCOUNT_IDENTITY_WIDTH)).flex_shrink_0()
+        let identity = div().min_w_0().flex().flex_1().child(
+            div()
+                .flex()
+                .items_center()
+                .gap_1()
+                .min_w_0()
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .font_weight(FontWeight::MEDIUM)
+                        .child(account.display_label()),
+                )
+                .child(reveal_email),
+        );
+        let actions = div().flex().items_end().gap_1().flex_shrink_0().child(
+            compact_action(
+                SharedString::from(format!("switch-{id}")),
+                if selected { "Active" } else { "Activate" },
+            )
+            .tooltip(if selected {
+                "This account is active"
+            } else {
+                "Use this account for the next request"
             })
-            .when(!wide, |d| d.flex_1())
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .min_w_0()
-                    .child(
-                        div()
-                            .min_w_0()
-                            .truncate()
-                            .font_weight(FontWeight::MEDIUM)
-                            .child(account.display_label()),
-                    )
-                    .child(reveal_email),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(theme.muted_foreground)
-                            .child(account.plan.clone()),
-                    )
-                    .when(selected, |d| {
-                        d.child(badge("Active", theme.success, theme.accent))
-                    }),
-            );
-        let actions = div()
-            .flex()
-            .flex_col()
-            .items_end()
-            .gap_1()
-            .flex_shrink_0()
-            .child(
-                action(
-                    SharedString::from(format!("switch-{id}")),
-                    if selected { "Selected" } else { "Switch" },
-                )
-                .disabled(self.busy || selected || self.proxy.is_none())
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    let id = id.clone();
-                    this.work(
-                        "Switching…",
-                        "Account switched. The next request will use this account.",
-                        move |store| store.switch(&id),
-                        cx,
-                    );
-                })),
-            )
-            .child(
-                action(
-                    SharedString::from(format!("details-{toggle_id}")),
-                    if expanded { "Collapse" } else { "Details" },
-                )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    if !this.expanded_accounts.remove(&toggle_id) {
-                        this.expanded_accounts.insert(toggle_id.clone());
-                    }
-                    cx.notify();
-                })),
-            );
-        let mut meters = div().flex_1().min_w_0().flex().gap_4();
+            .disabled(self.busy || selected || self.proxy.is_none())
+            .on_click(cx.listener(move |this, _, _, cx| {
+                let id = id.clone();
+                this.work(
+                    "Switching…",
+                    "Account switched. The next request will use this account.",
+                    move |store| store.switch(&id),
+                    cx,
+                );
+            })),
+        );
+        let details = icon_action(
+            SharedString::from(format!("details-{toggle_id}")),
+            if expanded {
+                gpui_kit::component::IconName::ChevronUp
+            } else {
+                gpui_kit::component::IconName::ChevronDown
+            },
+            if expanded {
+                "Hide account details"
+            } else {
+                "Account details and limit resets"
+            },
+        )
+        .on_click(cx.listener(move |this, _, _, cx| {
+            if !this.expanded_accounts.remove(&toggle_id) {
+                this.expanded_accounts.insert(toggle_id.clone());
+            }
+            cx.notify();
+        }));
+        let mut meters = stack().min_w_0().gap(px(tokens::SPACE_INLINE));
         if let Some(data) = data {
             for (index, limit) in data.windows().enumerate() {
                 meters = meters.child(limits::meter(&account.id, index, limit, self.now, cx));
@@ -262,63 +253,26 @@ impl Switcher {
                 },
             ));
         }
-        let count = data.and_then(|d| {
-            d.reset_details
-                .as_ref()
-                .map(|d| d.available_count)
-                .or_else(|| {
-                    d.rate_limit_reset_credits
-                        .as_ref()
-                        .map(|c| c.available_count)
-                })
-        });
-        let next = data
-            .and_then(|d| d.reset_details.as_ref())
-            .and_then(|d| d.next(self.now));
-        let expiration = next
-            .map(|c| {
-                c.expires_at
-                    .map(|at| {
-                        format!(
-                            "Next expiry: {}",
-                            at.with_timezone(&chrono::Local).format("%b %-d · %H:%M")
-                        )
-                    })
-                    .unwrap_or("No expiration date".into())
-            })
-            .unwrap_or_else(|| {
-                if count == Some(0) {
-                    "None available".into()
-                } else {
-                    "Dates unavailable".into()
-                }
-            });
         let resets = div()
-            .w(px(tokens::RESET_SUMMARY_WIDTH))
-            .flex_shrink_0()
+            .min_w_0()
             .flex()
-            .flex_col()
-            .gap_1()
+            .items_center()
+            .flex_wrap()
+            .gap(px(tokens::SPACE_INLINE))
+            .text_size(px(tokens::TEXT_CAPTION))
+            .text_color(theme.muted_foreground)
+            .child(account.plan.clone())
             .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(badge(
-                        count.map(|n| n.to_string()).unwrap_or("—".into()),
-                        theme.foreground,
-                        theme.muted,
-                    ))
-                    .child(div().text_color(theme.muted_foreground).child(match count {
-                        Some(1) => "reset",
-                        _ => "resets",
-                    })),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child(expiration),
+                div().flex().items_center().gap_2().child(
+                    div()
+                        .text_size(px(tokens::TEXT_CAPTION))
+                        .text_color(theme.muted_foreground)
+                        .child(format!(
+                            "· {} {}",
+                            count.map(|n| n.to_string()).unwrap_or("—".into()),
+                            if count == Some(1) { "reset" } else { "resets" }
+                        )),
+                ),
             )
             .when(data.is_some_and(|d| d.pending_reset), |d| {
                 d.child(
@@ -336,45 +290,34 @@ impl Switcher {
                         .child("Reset data is outdated"),
                 )
             });
-        let body = if wide {
-            div()
-                .flex()
-                .items_center()
-                .gap_5()
-                .child(identity)
-                .child(meters)
-                .child(resets)
-                .child(actions)
-        } else {
-            div()
-                .flex()
-                .flex_col()
-                .gap_3()
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_3()
-                        .child(identity)
-                        .child(actions),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .items_start()
-                        .gap_5()
-                        .child(meters)
-                        .child(resets),
-                )
-        };
+        let body = stack()
+            .gap_1()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(identity)
+                    .child(actions)
+                    .child(details),
+            )
+            .child(resets)
+            .child(meters);
         div()
             .id(SharedString::from(format!("account-{}", account.id)))
             .flex()
             .flex_col()
             .flex_shrink_0()
-            .py_3()
-            .border_b_1()
-            .border_color(theme.border)
+            .p(px(tokens::SPACE_INLINE))
+            .rounded(px(tokens::PANEL_RADIUS))
+            .bg((if selected { theme.accent } else { theme.muted })
+                .opacity(tokens::GLASS_CARD_ALPHA))
+            .border_1()
+            .border_color(if selected {
+                theme.primary.opacity(0.35)
+            } else {
+                theme.border
+            })
             .child(body)
             .when(view.is_some_and(|v| v.error.is_some()), |d| {
                 d.child(

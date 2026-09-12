@@ -6,7 +6,9 @@ The app interface is in English, including menus, dialogs, notifications, and er
 
 Account email addresses are hidden by default. Rows, account details, reset confirmations, menu bar text and tooltips, and system notifications use a stable label such as **Account a1b2c3d4**. Click the eye icon next to an account label (tooltip: **Show email**) to reveal its address in a dialog; **Hide email** or closing the dialog hides it again. Revealing an address does not change the menu bar or notifications, and is not remembered after restarting. Browser sign-in pages are outside this protection.
 
-![Account overview with synthetic demo accounts](docs/compact-dark.png)
+The main view is a compact accounts panel opened from the macOS menu bar. Connection instructions and diagnostics live in a separate **Settings** window.
+
+The panel has a native frosted-glass background and fades in/out when toggled from the menu bar (250/150 ms). macOS **Reduce Motion** makes the transition immediate. Closing clears any revealed email immediately, before the fade finishes.
 
 ## Getting started
 
@@ -20,17 +22,17 @@ open 'dist/Codex Sub Switcher.app'
 For development, use `cargo run --locked`. The app bundle is signed ad hoc locally; it is not a notarized distribution release.
 
 1. Click **Add account** and complete the standard Codex sign-in in your browser. Repeat for another account. Each sign-in uses its own working directory and does not sign out your regular CLI.
-2. Click **Switch** next to the account you want to use.
+2. Click **Activate** next to the account you want to use. The selected account shows **Active**.
 3. Connect your terminal using one of the options below.
-4. When a limit is exhausted, click **Switch** next to another account. The next request will use it. The app does not switch accounts or retry generation automatically after a limit error.
+4. When a limit is exhausted, click **Activate** next to another account. The next request will use it. The app does not switch accounts or retry generation automatically after a limit error.
 
-The app must remain running while you use the proxy. Closing its window hides it in the macOS menu bar and removes its Dock icon, while preserving the window state, proxy, and limit refreshes. The menu bar shows the active account's **remaining** capacity: **91%** for a single window, or **5h: 40% · 7d: 80%** for both. Values update after each refresh (automatically every minute) and when switching accounts. The last result remains visible during a refresh; no active account, missing data, or a refresh error displays **—%**. All displayed percentages are whole numbers.
+The app must remain running while you use the proxy. Left-click the menu-bar percentage to toggle the accounts panel. It opens below the status item, stays within the usable display bounds, and dismisses when focus leaves it or you press **Escape** (an open dialog handles Escape first). Accounts scroll within the panel; the header and refresh status remain visible. Closing the panel preserves the proxy, account operations, and limit refreshes. The menu bar shows the active account's **remaining** capacity: **91%** for a single window, or **5h: 40% · 7d: 80%** for both. Values update after each refresh (automatically every minute) and when switching accounts. The last result remains visible during a refresh; no active account, missing data, or a refresh error displays **—%**. All displayed percentages are whole numbers.
 
-Open the menu to see the active account, remaining limits, and reset times, or choose **Show window**, **Hide window**, or **Quit Codex Sub Switcher**. Showing the window restores the Dock icon. Only **Quit** or **⌘Q** stops the proxy. The yellow window button retains standard macOS minimization to the Dock. If creating the menu bar item fails, closing the window quits the app so it cannot remain running without accessible controls.
+The gear button or **⌘,** opens **Settings** with connection instructions, **Import from CLI**, notification testing, theme selection, and request counters. This is a separate, resizable application window with a Dock icon. Closing Settings returns to menu-bar operation. Right-click the menu-bar percentage for **Accounts**, **Settings…**, and **Quit Codex Sub Switcher**. Only **Quit** or **⌘Q** stops the proxy. If creating the menu-bar item fails, Settings opens as the regular app window and offers **Open accounts**; closing the last window then quits.
 
 ### Connect without changing configuration
 
-Click **Copy command** and paste it into a terminal in your project directory. The `codex-switch` launcher forwards arguments to the real CLI. You can add `resume`, `resume --last`, or other standard Codex arguments.
+In **Settings → Show instructions**, click **Copy command** and paste it into a terminal in your project directory. The `codex-switch` launcher forwards arguments to the real CLI. You can add `resume`, `resume --last`, or other standard Codex arguments.
 
 The regular `codex` command continues using its existing configuration. A process started outside the proxy needs to be stopped and resumed through the launcher once; subsequent account switches do not require a restart.
 
@@ -64,7 +66,7 @@ The native interface shares [design tokens and components](docs/design-system.md
 
 ## Limit reset notifications
 
-After a successful refresh, the app compares each account's limits with its previous successful reading. When a window's remaining capacity returns from below 100% to exactly 100%, it sends a system notification naming the account and restored limits. This also applies to inactive accounts and while the window is hidden. Clicking the notification shows the app window.
+After a successful refresh, the app compares each account's limits with its previous successful reading. When a window's remaining capacity returns from below 100% to exactly 100%, it sends a system notification naming the account and restored limits. This also applies to inactive accounts and while the panel is closed. Clicking the notification opens the accounts panel.
 
 The API still reports usage as `used_percent`, so detecting a full reset means comparing previous usage greater than zero with new usage equal to zero. Rounding the displayed remaining capacity to 100% does not trigger a notification.
 
@@ -76,7 +78,7 @@ Permission status appears below the refresh information. **Test notification** c
 
 ## Manual limit resets
 
-Each account row shows the number of reset credits and the nearest expiration date. **Details** reveals all expiration dates and the reset button. Credits are ordered by their exact expiration time, with undated credits last. **Next to use** identifies the earliest-expiring eligible `codex_rate_limits` credit; expired, redeemed, and unknown types are excluded.
+Each compact account row shows the plan, number of reset credits, and reported limits. The chevron next to **Activate** / **Active** expands account details, including expiration dates and the reset button. Credits are ordered by their exact expiration time, with undated credits last. **Next to use** identifies the earliest-expiring eligible `codex_rate_limits` credit; expired, redeemed, and unknown types are excluded.
 
 **Use reset** opens a confirmation naming the account and the selected credit's expiration date. The app sends the specific `credit_id` from the latest reading rather than relying on server ordering. If the credit expires or the selection changes while the dialog is open, confirmation is required again. Credits are never consumed or purchased automatically.
 
@@ -118,7 +120,7 @@ Earlier validation reports: [limits](docs/usage-validation.md), [tray and manual
 
 ## Screenshots
 
-All screenshots were refreshed on **September 12, 2026**, using the English app and six synthetic accounts. The current layout has a single page scroll, compact account rows, and shared refresh information. See [capture details](docs/screenshots.md) for the scope.
+These screenshots were captured on **September 12, 2026**, using the earlier standalone-window layout and six synthetic accounts. They predate the menu-bar panel redesign; new panel/settings screenshots have not yet been captured. See [capture details](docs/screenshots.md) for the earlier scope.
 
 - [Light theme](docs/compact-light.png)
 - [Dark theme](docs/compact-dark.png)

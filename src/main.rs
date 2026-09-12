@@ -4,11 +4,13 @@ mod dock;
 mod launcher;
 mod notifications;
 mod palette;
+mod panel_effects;
 mod proxy;
 mod resets;
 mod tray;
 mod ui;
 mod usage;
+mod windows;
 
 use accounts::{Snapshot, Store};
 use gpui_kit::component::{
@@ -448,7 +450,7 @@ fn main() {
         };
         palette::change(mode, None, cx);
         cx.on_window_closed(|cx, _| {
-            if cx.windows().is_empty() {
+            if cx.windows().is_empty() && !tray::available(cx) {
                 cx.quit();
             }
         })
@@ -460,31 +462,14 @@ fn main() {
                 false
             }
         };
-        let bounds = Bounds::centered(None, size(px(940.), px(780.)), cx);
-        cx.spawn(async move |cx| {
-            let options = WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                window_min_size: Some(size(px(800.), px(640.))),
-                titlebar: Some(TitlebarOptions {
-                    title: Some("Codex Sub Switcher".into()),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            };
-            if let Err(e) = cx.open_window(options, |window, cx| {
-                if tray_available {
-                    window.on_window_should_close(cx, |_, cx| {
-                        tray::hide(cx);
-                        false
-                    });
-                }
-                let view = cx.new(|cx| Switcher::new(store, snapshot, proxy, command, cx));
-                cx.new(|cx| Root::new(view, window, cx))
-            }) {
-                eprintln!("Could not open the window: {e}");
-            }
-        })
-        .detach();
+        let view = cx.new(|cx| Switcher::new(store, snapshot, proxy, command, cx));
+        windows::install(view, cx);
+        if tray_available {
+            dock::hide();
+            windows::show_panel(cx);
+        } else {
+            windows::show_settings(cx);
+        }
     });
 }
 

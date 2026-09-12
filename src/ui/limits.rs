@@ -20,16 +20,16 @@ pub(super) fn meter(
         .and_then(|t| chrono::DateTime::from_timestamp(t, 0));
     let reset_text = match reset {
         Some(at) if at > now => format!(
-            "Reset {}",
+            "{}",
             at.with_timezone(&chrono::Local).format("%b %-d · %H:%M")
         ),
         Some(_) => "Waiting for reset".into(),
         None => "Reset time unavailable".into(),
     };
     stack()
-        .flex_1()
         .min_w_0()
-        .gap_1()
+        .gap_0p5()
+        .text_size(px(tokens::TEXT_CAPTION))
         .child(
             div()
                 .flex()
@@ -42,8 +42,16 @@ pub(super) fn meter(
                 )
                 .child(
                     div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_color(theme.muted_foreground)
+                        .child(reset_text),
+                )
+                .child(
+                    div()
                         .font_weight(FontWeight::MEDIUM)
-                        .text_color(color)
+                        .text_color(theme.foreground)
                         .child(format!("{remaining:.0}% left")),
                 ),
         )
@@ -53,11 +61,5 @@ pub(super) fn meter(
                 .value(remaining)
                 .accessibility_label(format!("{}: {:.0}% remaining", limit.label(), remaining))
                 .color(color),
-        )
-        .child(
-            div()
-                .text_size(px(tokens::TEXT_CAPTION))
-                .text_color(theme.muted_foreground)
-                .child(reset_text),
         )
 }

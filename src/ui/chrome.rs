@@ -2,6 +2,72 @@
 use super::*;
 
 impl Switcher {
+    pub(super) fn panel_footer(&self, cx: &Context<Self>) -> Div {
+        let theme = cx.theme();
+        let checked = self.usage.values().filter_map(|v| v.checked).min();
+        let updated = if self.usage_loading {
+            "Refreshing…".into()
+        } else {
+            checked
+                .map(|at| {
+                    format!(
+                        "Updated {}",
+                        at.with_timezone(&chrono::Local).format("%H:%M")
+                    )
+                })
+                .unwrap_or("Refreshes every minute".into())
+        };
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(px(tokens::SPACE_INLINE))
+            .px(px(tokens::SPACE_SECTION))
+            .py(px(tokens::SPACE_CONTENT))
+            .border_t_1()
+            .border_color(theme.border)
+            .text_size(px(tokens::TEXT_CAPTION))
+            .child(
+                div()
+                    .text_color(theme.foreground)
+                    .child(if self.proxy.is_some() {
+                        "Proxy active"
+                    } else {
+                        "Proxy unavailable"
+                    }),
+            )
+            .child(div().text_color(theme.muted_foreground).child(updated))
+    }
+
+    pub(super) fn settings_accounts(&self, cx: &Context<Self>) -> Div {
+        panel(cx)
+            .child(div().font_weight(FontWeight::MEDIUM).child("Accounts"))
+            .child(div().text_color(cx.theme().muted_foreground).child(
+                "Manage saved accounts in the menu-bar panel, or import your existing CLI sign-in.",
+            ))
+            .child(
+                div()
+                    .flex()
+                    .gap(px(tokens::SPACE_INLINE))
+                    .child(
+                        action("open-accounts", "Open accounts")
+                            .on_click(|_, _, cx| cx.defer(windows::show_panel)),
+                    )
+                    .child(
+                        action("import", "Import from CLI")
+                            .disabled(self.busy)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.work(
+                                    "Importing…",
+                                    "Account saved.",
+                                    |s| s.import_current(),
+                                    cx,
+                                )
+                            })),
+                    ),
+            )
+    }
+
     pub(super) fn empty_accounts(&self, cx: &Context<Self>) -> Div {
         stack()
             .py_8()
@@ -42,12 +108,12 @@ impl Switcher {
                         div()
                             .text_size(px(tokens::TEXT_HEADING))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .child("Codex Sub Switcher"),
+                            .child("Settings"),
                     )
                     .child(
                         div()
                             .text_color(cx.theme().muted_foreground)
-                            .child("Accounts and subscription limits"),
+                            .child("Connection, notifications and diagnostics"),
                     ),
             )
             .child(action("theme", "Toggle theme").on_click(|_, window, cx| {
@@ -92,13 +158,12 @@ impl Switcher {
                     }, cx))))
     }
 
-    pub(super) fn account_toolbar(&self, cx: &Context<Self>) -> Div {
+    pub(super) fn panel_header(&self, cx: &Context<Self>) -> Div {
         div()
             .flex()
             .items_center()
             .justify_between()
             .gap(px(tokens::SPACE_CONTENT))
-            .pt(px(tokens::SPACE_INLINE))
             .child(
                 div()
                     .font_weight(FontWeight::MEDIUM)
@@ -110,31 +175,24 @@ impl Switcher {
                     .items_center()
                     .gap(px(tokens::SPACE_INLINE))
                     .child(
-                        action("refresh", "Refresh")
-                            .disabled(self.busy || self.usage_loading)
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.work(
-                                    "Refreshing…",
-                                    "Account list refreshed.",
-                                    |s| s.snapshot(),
-                                    cx,
-                                )
-                            })),
+                        icon_action(
+                            "refresh",
+                            gpui_kit::component::IconName::RotateCw,
+                            "Refresh accounts",
+                        )
+                        .disabled(self.busy || self.usage_loading)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.work(
+                                "Refreshing…",
+                                "Account list refreshed.",
+                                |s| s.snapshot(),
+                                cx,
+                            )
+                        })),
                     )
                     .child(
-                        action("import", "Import from CLI")
-                            .disabled(self.busy)
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.work(
-                                    "Importing…",
-                                    "Account saved.",
-                                    |s| s.import_current(),
-                                    cx,
-                                )
-                            })),
-                    )
-                    .child(
-                        primary_action("add", "Add account")
+                        compact_action("add", "Add account")
+                            .primary()
                             .disabled(self.busy)
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.cancel = Arc::new(AtomicBool::new(false));
@@ -147,6 +205,14 @@ impl Switcher {
                                     cx,
                                 );
                             })),
+                    )
+                    .child(
+                        icon_action(
+                            "settings",
+                            gpui_kit::component::IconName::Settings,
+                            "Settings",
+                        )
+                        .on_click(|_, _, cx| cx.defer(windows::show_settings)),
                     ),
             )
     }

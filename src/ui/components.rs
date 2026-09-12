@@ -13,8 +13,12 @@ pub(super) fn action(id: impl Into<ElementId>, label: impl Into<SharedString>) -
         .rounded(px(tokens::RADIUS))
 }
 
-pub(super) fn primary_action(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Button {
-    action(id, label).primary()
+pub(super) fn compact_action(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Button {
+    action(id, label)
+        .with_variant(ButtonVariant::default())
+        .h(px(tokens::ICON_CONTROL_HEIGHT))
+        .px(px(tokens::SPACE_INLINE))
+        .text_size(px(tokens::TEXT_CAPTION))
 }
 
 pub(super) fn icon_action(

@@ -12,9 +12,9 @@ pub fn change(mode: ThemeMode, window: Option<&mut Window>, cx: &mut App) {
     theme.font_family = tokens::FONT_FAMILY.into();
     let c = &mut theme.colors;
     c.background = rgb(if dark { 0x182329 } else { 0xf4f5f2 }).into();
-    c.foreground = rgb(if dark { 0xdae5e3 } else { 0x243b38 }).into();
+    c.foreground = rgb(if dark { 0xf7faf9 } else { 0x101714 }).into();
     c.muted = rgb(if dark { 0x223238 } else { 0xe9eeea }).into();
-    c.muted_foreground = rgb(if dark { 0xa2b8b3 } else { 0x586f68 }).into();
+    c.muted_foreground = rgb(if dark { 0xdce5e1 } else { 0x29332e }).into();
     c.border = rgba(if dark { 0xc4e4db25 } else { 0x234e3e26 }).into();
     c.accent = rgb(if dark { 0x284740 } else { 0xdceee5 }).into();
     c.accent_foreground = c.foreground;
