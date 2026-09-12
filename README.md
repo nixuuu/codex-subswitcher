@@ -4,7 +4,7 @@ A native macOS app built with Rust and GPUI Kit for switching subscription accou
 
 The app interface is in English, including menus, dialogs, notifications, and error messages. Dialogs provided by macOS or your browser may follow the system language.
 
-Account email addresses are hidden by default. Rows, account details, reset confirmations, menu bar text and tooltips, and system notifications use a stable label such as **Account a1b2c3d4**. Click **Show email** on a specific account to reveal its address in a dialog; **Hide email** or closing the dialog hides it again. Revealing an address does not change the menu bar or notifications, and is not remembered after restarting. Browser sign-in pages are outside this protection.
+Account email addresses are hidden by default. Rows, account details, reset confirmations, menu bar text and tooltips, and system notifications use a stable label such as **Account a1b2c3d4**. Click the eye icon next to an account label (tooltip: **Show email**) to reveal its address in a dialog; **Hide email** or closing the dialog hides it again. Revealing an address does not change the menu bar or notifications, and is not remembered after restarting. Browser sign-in pages are outside this protection.
 
 ![Account overview with synthetic demo accounts](docs/compact-dark.png)
 
@@ -49,6 +49,8 @@ Afterward, **new `codex` sessions started from any directory** use the proxy unl
 **Restore config.toml** restores the previous provider selection and removes the app's proxy section while preserving later unrelated edits. If the proxy section has been changed manually, the app refuses to overwrite it and retains the backup. Backups remain in the app's data directory. Restore the configuration before moving or removing the app, because it references the executable's absolute path.
 
 ## Behavior and limitations
+
+The native interface shares [design tokens and components](docs/design-system.md). Text actions use consistent sizing and styling; account details and connection instructions expand and collapse with a short transition that respects macOS Reduce Motion.
 
 - Account selection applies to every terminal using this proxy. A request started before a switch remains assigned to its original account, including during token refresh.
 - The proxy supports the model list, Responses over HTTP/SSE, and the compaction endpoint. WebSocket is disabled in the provider configuration. `previous_response_id` continuation identifiers are rejected; the CLI must send conversation history.

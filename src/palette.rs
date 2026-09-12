@@ -1,11 +1,15 @@
 //! Product colors shared by GPUI Component and Base; no per-view literal colors.
+use crate::ui::tokens;
 use gpui_kit::component::{Theme, ThemeMode};
-use gpui_kit::{App, Window, rgb, rgba};
+use gpui_kit::{App, Window, px, rgb, rgba};
 
 pub fn change(mode: ThemeMode, window: Option<&mut Window>, cx: &mut App) {
     Theme::change(mode, None, cx);
     let dark = mode.is_dark();
     let theme = Theme::global_mut(cx);
+    theme.radius = px(tokens::RADIUS);
+    theme.radius_lg = px(tokens::PANEL_RADIUS);
+    theme.font_family = tokens::FONT_FAMILY.into();
     let c = &mut theme.colors;
     c.background = rgb(if dark { 0x182329 } else { 0xf4f5f2 }).into();
     c.foreground = rgb(if dark { 0xdae5e3 } else { 0x243b38 }).into();
@@ -61,7 +65,7 @@ pub fn change(mode: ThemeMode, window: Option<&mut Window>, cx: &mut App) {
     c.scrollbar_thumb = c.border;
     c.scrollbar_thumb_hover = c.muted_foreground;
     theme.tokens = (&theme.colors).into();
-    theme.shadow = !dark;
+    theme.shadow = false;
     Theme::sync_base(cx);
     if let Some(window) = window {
         window.refresh();
