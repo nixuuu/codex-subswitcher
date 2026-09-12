@@ -32,19 +32,19 @@ pub struct Window {
 impl Usage {
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let value: serde_json::Value = serde_json::from_slice(bytes)?;
-        ensure!(value.get("rate_limit").is_some(), "Brak danych o limitach.");
+        ensure!(value.get("rate_limit").is_some(), "Missing limit data.");
         let usage: Self = serde_json::from_value(value)?;
         for w in usage.windows() {
             ensure!(
                 w.used_percent.is_finite()
                     && (0.0..=100.0).contains(&w.used_percent)
                     && w.limit_window_seconds > 0,
-                "Niepoprawne dane limitu."
+                "Invalid limit data."
             );
             ensure!(
                 w.reset_at
                     .is_none_or(|t| DateTime::from_timestamp(t, 0).is_some()),
-                "Niepoprawna data resetu."
+                "Invalid reset date."
             );
         }
         Ok(usage)
@@ -55,7 +55,9 @@ impl Usage {
             .flat_map(|r| r.primary_window.iter().chain(r.secondary_window.iter()))
     }
 
-    /// Compare reported values, not reset deadlines or primary/secondary positions.
+    /// Notify when remaining capacity returns to exactly 100%. Compare the
+    /// reported usage to zero: subtracting tiny usage from 100 can round to 100.
+    /// Reset deadlines and primary/secondary positions are not reset evidence.
     pub fn silent_resets_since(&self, previous: &Self) -> Vec<String> {
         if self.pending_reset || previous.pending_reset {
             return Vec::new();
@@ -73,26 +75,31 @@ impl Usage {
     }
 }
 impl Window {
+    pub fn remaining_percent(&self) -> f32 {
+        100.0 - self.used_percent
+    }
+
     pub fn label(&self) -> String {
         match self.limit_window_seconds {
             18000 => "5h".into(),
-            604800 => "Weekly · 7 dni".into(),
-            s if s % 86400 == 0 => format!("{} dni", s / 86400),
+            604800 => "Weekly".into(),
+            86400 => "1 day".into(),
+            s if s % 86400 == 0 => format!("{} days", s / 86400),
             s if s % 3600 == 0 => format!("{}h", s / 3600),
             s => format!("{} min", s / 60),
         }
     }
     pub fn reset_label(&self, now: DateTime<Utc>) -> String {
         let Some(at) = self.reset_at.and_then(|t| DateTime::from_timestamp(t, 0)) else {
-            return "Termin resetu niedostępny".into();
+            return "Reset time unavailable".into();
         };
         let remaining = (at - now).num_seconds();
         let date = at
             .with_timezone(&Local)
-            .format("%d.%m %H:%M %Z")
+            .format("%b %-d %H:%M %Z")
             .to_string();
         if remaining <= 0 {
-            return format!("Reset {date} · oczekiwanie na nowe dane");
+            return format!("Reset {date} · waiting for updated data");
         }
         let minutes = (remaining + 59) / 60;
         let relative = if minutes >= 1440 {
@@ -100,7 +107,7 @@ impl Window {
         } else {
             format!("{}h {}min", minutes / 60, minutes % 60)
         };
-        format!("Reset za {relative} · {date}")
+        format!("Resets in {relative} · {date}")
     }
 }
 
@@ -121,14 +128,14 @@ mod tests {
         )
         .unwrap();
         assert_eq!(u.windows().count(), 1);
-        assert_eq!(u.windows().next().unwrap().label(), "Weekly · 7 dni");
+        assert_eq!(u.windows().next().unwrap().label(), "Weekly");
     }
     #[test]
     fn both_windows_and_absent_limits() {
         let u = Usage::parse(&serde_json::to_vec(&json!({"rate_limit":{"primary_window":window(18000),"secondary_window":window(604800)}})).unwrap()).unwrap();
         assert_eq!(
             u.windows().map(Window::label).collect::<Vec<_>>(),
-            ["5h", "Weekly · 7 dni"]
+            ["5h", "Weekly"]
         );
         assert_eq!(
             Usage::parse(br#"{"rate_limit":null}"#)
@@ -163,7 +170,7 @@ mod tests {
         };
         assert!(
             w.reset_label(DateTime::from_timestamp(1001, 0).unwrap())
-                .contains("oczekiwanie")
+                .contains("waiting")
         );
     }
 
@@ -186,13 +193,10 @@ mod tests {
     fn silent_reset_matches_window_duration_even_when_positions_change() {
         let previous = reported(&[(18000, 32.0), (604800, 89.0)]);
         let current = reported(&[(604800, 0.0), (18000, 0.0)]);
-        assert_eq!(
-            current.silent_resets_since(&previous),
-            ["Weekly · 7 dni", "5h"]
-        );
+        assert_eq!(current.silent_resets_since(&previous), ["Weekly", "5h"]);
         assert_eq!(
             reported(&[(604800, 0.0)]).silent_resets_since(&previous),
-            ["Weekly · 7 dni"]
+            ["Weekly"]
         );
     }
 
@@ -203,6 +207,7 @@ mod tests {
             reported(&[]),
             reported(&[(604800, 0.0)]),
             reported(&[(18000, 0.01)]),
+            reported(&[(18000, f32::EPSILON)]),
             reported(&[(18000, 32.0)]),
             reported(&[(18000, 90.0)]),
         ] {
@@ -226,5 +231,21 @@ mod tests {
         previous.pending_reset = false;
         current.pending_reset = true;
         assert!(current.silent_resets_since(&previous).is_empty());
+    }
+
+    #[test]
+    fn remaining_capacity_is_the_inverse_of_reported_usage() {
+        for (used, remaining) in [(0.0, 100.0), (9.0, 91.0), (90.0, 10.0), (100.0, 0.0)] {
+            let data = reported(&[(18000, used)]);
+            assert_eq!(
+                data.windows().next().unwrap().remaining_percent(),
+                remaining
+            );
+        }
+        let partially_used = reported(&[(18000, f32::EPSILON)]);
+        assert_eq!(
+            reported(&[(18000, 0.0)]).silent_resets_since(&partially_used),
+            ["5h"]
+        );
     }
 }

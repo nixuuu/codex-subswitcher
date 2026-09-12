@@ -20,12 +20,10 @@ pub struct Response {
 impl Outcome {
     pub fn message(&self) -> &'static str {
         match self {
-            Self::Reset => "Restart wykorzystany. Pobieram aktualne limity.",
-            Self::NothingToReset => "Limity nie wymagają teraz resetu.",
-            Self::NoCredit => "Brak dostępnego restartu na tym koncie.",
-            Self::AlreadyRedeemed => {
-                "Ten restart został już wykorzystany. Pobieram aktualne limity."
-            }
+            Self::Reset => "Reset credit used. Refreshing limits.",
+            Self::NothingToReset => "The limits do not need a reset right now.",
+            Self::NoCredit => "No reset credit available for this account.",
+            Self::AlreadyRedeemed => "This reset credit has already been used. Refreshing limits.",
         }
     }
 }
@@ -44,11 +42,11 @@ impl Credit {
         self.expires_at
             .map(|at| {
                 format!(
-                    "Wygasa {}",
-                    at.with_timezone(&Local).format("%d.%m.%Y %H:%M %Z")
+                    "Expires {}",
+                    at.with_timezone(&Local).format("%b %-d, %Y %H:%M %Z")
                 )
             })
-            .unwrap_or("Bez daty wygaśnięcia".into())
+            .unwrap_or("No expiration date".into())
     }
 }
 #[derive(Clone)]
@@ -72,13 +70,16 @@ impl Credits {
             available_count: u32,
         }
         let raw: Raw = serde_json::from_slice(bytes)?;
-        ensure!(raw.credits.len() <= 1000, "Zbyt długa lista restartów.");
+        ensure!(
+            raw.credits.len() <= 1000,
+            "The reset credit list is too long."
+        );
         let mut credits = Vec::new();
         let mut ids = std::collections::HashSet::new();
         for c in raw.credits {
             ensure!(
                 !c.id.is_empty() && ids.insert(c.id.clone()),
-                "Niepoprawne identyfikatory restartów."
+                "Invalid reset credit IDs."
             );
             credits.push(Credit {
                 id: c.id,
@@ -131,18 +132,18 @@ fn read_request(bytes: &[u8]) -> Result<Request> {
                 .redeem_request_id
                 .bytes()
                 .all(|b| b.is_ascii_hexdigit()),
-        "Niepoprawny zapis restartu."
+        "Invalid saved reset request."
     );
     ensure!(
         request.credit_id.as_ref().is_none_or(|id| !id.is_empty()),
-        "Niepoprawny zapis restartu."
+        "Invalid saved reset request."
     );
     Ok(request)
 }
 fn path(store: &Store, id: &str) -> Result<std::path::PathBuf> {
     ensure!(
         id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit()),
-        "Niepoprawny profil."
+        "Invalid profile."
     );
     Ok(store.root.join(format!("reset-{id}.json")))
 }
@@ -155,9 +156,9 @@ pub fn request(store: &Store, id: &str, credit_id: Option<&str>) -> Result<Reque
     match std::fs::read(&path) {
         Ok(bytes) => read_request(&bytes),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            let credit_id = credit_id
-                .filter(|s| !s.is_empty())
-                .ok_or_else(|| anyhow::anyhow!("Odśwież listę restartów przed nową operacją."))?;
+            let credit_id = credit_id.filter(|s| !s.is_empty()).ok_or_else(|| {
+                anyhow::anyhow!("Refresh the reset credit list before starting a new operation.")
+            })?;
             let mut bytes = [0u8; 32];
             rand::rngs::OsRng.fill_bytes(&mut bytes);
             let request = Request {
@@ -174,7 +175,10 @@ pub fn finish(store: &Store, id: &str, key: &str) -> Result<()> {
     let _lock = store.lock()?;
     let path = path(store, id)?;
     let saved = read_request(&std::fs::read(&path)?)?.redeem_request_id;
-    ensure!(saved == key, "Zapis restartu zmienił się podczas operacji.");
+    ensure!(
+        saved == key,
+        "The saved reset request changed during the operation."
+    );
     std::fs::remove_file(path)?;
     Ok(())
 }

@@ -16,7 +16,7 @@ struct Patch {
 }
 fn parse(text: &str) -> Result<DocumentMut> {
     text.parse()
-        .map_err(|_| anyhow::anyhow!("Niepoprawny config.toml. Plik nie został zmieniony."))
+        .map_err(|_| anyhow::anyhow!("Invalid config.toml. The file was not changed."))
 }
 fn read(path: &Path) -> Result<String> {
     match fs::read_to_string(path) {
@@ -52,22 +52,22 @@ pub fn enabled(store: &Store) -> bool {
 pub fn enable(store: &Store, port: u16, binary: &Path) -> Result<()> {
     let _lock = store.lock()?;
     let path = store.codex_home.join("config.toml");
-    ensure!(store.codex_home.is_dir(), "Brak katalogu CODEX_HOME.");
+    ensure!(store.codex_home.is_dir(), "CODEX_HOME directory not found.");
     let original = read(&path)?;
     let mut doc = parse(&original)?;
     let record_path = store.root.join("config-patch.json");
     ensure!(
         !record_path.exists(),
-        "Istnieje wcześniejsza zmiana konfiguracji. Najpierw wybierz Przywróć config.toml."
+        "A previous configuration change exists. Choose Restore config.toml first."
     );
     ensure!(
         doc.get("model_providers")
             .is_none_or(|p| p.get(PROVIDER).is_none()),
-        "Nazwa subscription_switcher jest już zajęta w config.toml."
+        "The name subscription_switcher is already in use in config.toml."
     );
     ensure!(
         doc.get("model_provider").and_then(Item::as_str) != Some(PROVIDER),
-        "Konfiguracja już wybiera subscription_switcher; najpierw przywróć poprzednie ustawienie."
+        "The configuration already selects subscription_switcher; restore the previous setting first."
     );
     let p = provider(port, binary, &store.root.join("connection.json"));
     let expected = p.to_string();
@@ -76,13 +76,12 @@ pub fn enable(store: &Store, port: u16, binary: &Path) -> Result<()> {
     }
     ensure!(
         doc["model_providers"].is_table(),
-        "model_providers ma nieobsługiwany format inline. Niczego nie zmieniono."
+        "model_providers uses an unsupported inline format. Nothing was changed."
     );
     doc["model_providers"][PROVIDER] = Item::Table(p);
     doc["model_provider"] = value(PROVIDER);
     let next = doc.to_string();
-    let _: toml::Value =
-        toml::from_str(&next).context("Nie udało się przygotować konfiguracji.")?;
+    let _: toml::Value = toml::from_str(&next).context("Could not prepare the configuration.")?;
     let backup = store.root.join(format!(
         "config-before-proxy-{}.toml",
         chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
@@ -98,7 +97,7 @@ pub fn enable(store: &Store, port: u16, binary: &Path) -> Result<()> {
     )?;
     ensure!(
         read(&path)? == original,
-        "Config zmienił się w trakcie operacji. Spróbuj przywrócenia przed ponownym włączeniem."
+        "The configuration changed during the operation. Try restoring it before enabling again."
     );
     atomic_write(&path, next.as_bytes())
 }
@@ -106,22 +105,22 @@ pub fn restore(store: &Store) -> Result<()> {
     let _lock = store.lock()?;
     let record_path = store.root.join("config-patch.json");
     let record: Patch = serde_json::from_slice(
-        &fs::read(&record_path).context("Brak zapisanej zmiany switchera do przywrócenia.")?,
+        &fs::read(&record_path).context("No saved switcher configuration change to restore.")?,
     )?;
     ensure!(
         record.config == store.codex_home.join("config.toml"),
-        "Kopia konfiguracji dotyczy innego CODEX_HOME."
+        "The configuration backup belongs to a different CODEX_HOME."
     );
     let current = read(&record.config)?;
     let mut doc = parse(&current)?;
     let backup = parse(&read(&record.backup)?)?;
     if let Some(p) = doc.get("model_providers").and_then(|p| p.get(PROVIDER)) {
         let actual: toml::Value =
-            toml::from_str(&p.to_string()).context("Nie można porównać konfiguracji proxy.")?;
+            toml::from_str(&p.to_string()).context("Could not compare the proxy configuration.")?;
         let expected: toml::Value = toml::from_str(&record.provider)?;
         ensure!(
             actual == expected,
-            "Ustawienia dostawcy proxy zostały zmienione ręcznie. Zachowano konfigurację i jej kopię."
+            "The proxy provider settings were changed manually. The configuration and its backup have been preserved."
         );
     }
     if doc.get("model_provider").and_then(Item::as_str) == Some(PROVIDER) {
@@ -139,7 +138,7 @@ pub fn restore(store: &Store) -> Result<()> {
     }
     ensure!(
         read(&record.config)? == current,
-        "Config zmienił się w trakcie operacji. Spróbuj ponownie."
+        "The configuration changed during the operation. Try again."
     );
     atomic_write(&record.config, doc.to_string().as_bytes())?;
     fs::remove_file(record_path)?;

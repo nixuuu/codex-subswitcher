@@ -51,23 +51,23 @@ impl Credential {
     pub fn parse(bytes: Vec<u8>) -> Result<Self> {
         ensure!(
             bytes.len() <= MAX_AUTH as usize,
-            "Plik logowania jest zbyt duży."
+            "The credentials file is too large."
         );
         let value: Value = serde_json::from_slice(&bytes)
-            .map_err(|_| anyhow::anyhow!("Niepoprawny format pliku logowania."))?;
+            .map_err(|_| anyhow::anyhow!("Invalid credentials file format."))?;
         ensure!(
             value
                 .get("auth_mode")
                 .and_then(Value::as_str)
                 .is_none_or(|m| m == "chatgpt")
                 && value.get("OPENAI_API_KEY").is_none_or(Value::is_null),
-            "Obsługiwane są konta ChatGPT, nie klucze API."
+            "Only ChatGPT accounts are supported, not API keys."
         );
         let tokens = &value["tokens"];
         for key in ["id_token", "access_token", "refresh_token"] {
             ensure!(
                 tokens[key].as_str().is_some_and(|v| !v.is_empty()),
-                "Brak pełnego logowania ChatGPT. Zaloguj konto ponownie."
+                "Incomplete ChatGPT credentials. Sign in again."
             );
         }
         let payload = tokens["id_token"]
@@ -75,32 +75,32 @@ impl Credential {
             .unwrap()
             .split('.')
             .nth(1)
-            .context("Niepoprawny token tożsamości.")?;
+            .context("Invalid identity token.")?;
         let decoded = URL_SAFE_NO_PAD
             .decode(payload.trim_end_matches('='))
-            .map_err(|_| anyhow::anyhow!("Niepoprawny token tożsamości."))?;
+            .map_err(|_| anyhow::anyhow!("Invalid identity token."))?;
         let claims: Value = serde_json::from_slice(&decoded)
-            .map_err(|_| anyhow::anyhow!("Niepoprawne metadane konta."))?;
+            .map_err(|_| anyhow::anyhow!("Invalid account metadata."))?;
         let auth = &claims["https://api.openai.com/auth"];
         let workspace = tokens["account_id"]
             .as_str()
             .or_else(|| auth["chatgpt_account_id"].as_str())
             .filter(|s| !s.is_empty())
-            .context("Brak identyfikatora konta.")?
+            .context("Missing account ID.")?
             .to_owned();
         let subject = claims["sub"]
             .as_str()
             .or_else(|| auth["chatgpt_user_id"].as_str())
-            .context("Brak identyfikatora użytkownika.")?;
+            .context("Missing user ID.")?;
         let id = format!("{:x}", Sha256::digest(format!("{workspace}\0{subject}")));
         // JWT claims are display metadata only; authentication is left to Codex.
         let email = claims["email"]
             .as_str()
-            .unwrap_or("Konto ChatGPT")
+            .unwrap_or("ChatGPT account")
             .to_owned();
         let plan = auth["chatgpt_plan_type"]
             .as_str()
-            .unwrap_or("nieznany plan")
+            .unwrap_or("unknown plan")
             .to_owned();
         Ok(Self {
             bytes,
@@ -124,7 +124,7 @@ pub struct Snapshot {
 }
 impl Store {
     pub fn discover() -> Result<Self> {
-        let user_home = std::env::var_os("HOME").context("Brak katalogu użytkownika.")?;
+        let user_home = std::env::var_os("HOME").context("User home directory not found.")?;
         let codex_home = std::env::var_os("CODEX_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(&user_home).join(".codex"));
@@ -147,14 +147,15 @@ impl Store {
             .mode(0o600)
             .open(path)?;
         file.try_lock_exclusive()
-            .context("Inna operacja switchera jest w toku.")?;
+            .context("Another switcher operation is in progress.")?;
         Ok(file)
     }
     fn check_config(&self, credential: Option<&Credential>) -> Result<()> {
         let path = self.codex_home.join("config.toml");
         let config: toml::Value = match fs::read_to_string(&path) {
-            Ok(s) => toml::from_str(&s)
-                .map_err(|_| anyhow::anyhow!("Nie można odczytać config.toml."))?,
+            Ok(s) => {
+                toml::from_str(&s).map_err(|_| anyhow::anyhow!("Could not read config.toml."))?
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 toml::Value::Table(Default::default())
             }
@@ -166,14 +167,14 @@ impl Store {
                 .and_then(toml::Value::as_str)
                 .unwrap_or("file")
                 == "file",
-            "Ten switcher obsługuje magazyn file. Wykryto inny cli_auth_credentials_store; niczego nie zmieniono."
+            "Only file credential storage is supported. A different cli_auth_credentials_store was detected; nothing was changed."
         );
         ensure!(
             config
                 .get("forced_login_method")
                 .and_then(toml::Value::as_str)
                 .is_none_or(|m| m == "chatgpt"),
-            "Konfiguracja wymaga innej metody logowania."
+            "The configuration requires a different sign-in method."
         );
         if let (Some(expected), Some(credential)) =
             (config.get("forced_chatgpt_workspace_id"), credential)
@@ -184,7 +185,7 @@ impl Store {
                     .is_some_and(|a| a.iter().any(|v| v.as_str() == Some(&credential.workspace)));
             ensure!(
                 matches,
-                "Konto nie pasuje do workspace wymaganego w konfiguracji."
+                "The account does not match the workspace required by the configuration."
             );
         }
         Ok(())
@@ -192,7 +193,7 @@ impl Store {
     fn account_path(&self, id: &str) -> Result<PathBuf> {
         ensure!(
             id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit()),
-            "Niepoprawny identyfikator profilu."
+            "Invalid profile ID."
         );
         Ok(self.root.join("accounts").join(format!("{id}.json")))
     }
@@ -215,10 +216,11 @@ impl Store {
             for entry in fs::read_dir(dir)? {
                 let path = entry?.path();
                 if path.extension().is_some_and(|e| e == "json") {
-                    let c = read_credential(&path)?.context("Profil zniknął podczas odczytu.")?;
+                    let c = read_credential(&path)?
+                        .context("The profile disappeared while being read.")?;
                     ensure!(
                         path.file_stem().and_then(|s| s.to_str()) == Some(&c.account.id),
-                        "Tożsamość profilu nie pasuje do pliku."
+                        "The profile identity does not match the file."
                     );
                     accounts.push(c.account);
                 }
@@ -236,28 +238,28 @@ impl Store {
         let _lock = self.lock()?;
         self.check_config(None)?;
         let c = read_credential(&self.codex_home.join("auth.json"))?
-            .context("CLI nie ma zapisanego logowania. Wybierz Dodaj konto.")?;
+            .context("No saved CLI credentials. Choose Add account.")?;
         self.check_config(Some(&c))?;
         ensure!(
             !self.account_path(&c.account.id)?.exists(),
-            "To konto jest już zapisane. Użyj Dodaj konto, jeśli potrzebujesz nowego logowania."
+            "This account is already saved. Use Add account if you need to sign in again."
         );
         self.save(&c)?;
         self.snapshot()
     }
     pub fn import_from(&self, path: &Path) -> Result<Snapshot> {
         let _lock = self.lock()?;
-        let c = read_credential(path)?.context("Logowanie nie zapisało konta.")?;
+        let c = read_credential(path)?.context("Sign-in did not save an account.")?;
         self.check_config(Some(&c))?;
         self.save(&c)?;
         self.snapshot()
     }
     pub fn switch(&self, id: &str) -> Result<Snapshot> {
         let _lock = self.lock()?;
-        let target = read_credential(&self.account_path(id)?)?.context("Nie znaleziono konta.")?;
+        let target = read_credential(&self.account_path(id)?)?.context("Account not found.")?;
         ensure!(
             target.account.id == id,
-            "Tożsamość profilu nie pasuje do wyboru."
+            "The profile identity does not match the selection."
         );
         atomic_write(&self.root.join("active"), id.as_bytes())?;
         self.snapshot()
@@ -273,14 +275,16 @@ impl Store {
         }
     }
     pub fn active_credential(&self) -> Result<Credential> {
-        let id = self.active_id()?.context("Wybierz konto w switcherze.")?;
+        let id = self
+            .active_id()?
+            .context("Select an account in the switcher.")?;
         self.credential(&id)
     }
     pub fn credential(&self, id: &str) -> Result<Credential> {
-        let c = read_credential(&self.account_path(id)?)?.context("Nie znaleziono profilu.")?;
+        let c = read_credential(&self.account_path(id)?)?.context("Profile not found.")?;
         ensure!(
             c.account.id == id,
-            "Tożsamość profilu nie pasuje do wyboru."
+            "The profile identity does not match the selection."
         );
         Ok(c)
     }
@@ -288,12 +292,12 @@ impl Store {
         let _lock = self.lock()?;
         ensure!(
             previous.account.id == refreshed.account.id,
-            "Odświeżenie zmieniło tożsamość konta."
+            "Refreshing credentials changed the account identity."
         );
         let stored = self.credential(&previous.account.id)?;
         ensure!(
             stored.bytes == previous.bytes,
-            "Profil zmienił się podczas odświeżania; ponów żądanie."
+            "The profile changed while refreshing; retry the request."
         );
         self.save(refreshed)
     }
@@ -302,7 +306,7 @@ impl Store {
         let current = self.snapshot()?.current;
         ensure!(
             current.is_none_or(|c| c.id != id),
-            "Najpierw przełącz na inne konto."
+            "Switch to another account first."
         );
         let path = self.account_path(id)?;
         reject_symlink(&path)?;
@@ -320,7 +324,7 @@ fn reject_symlink(path: &Path) -> Result<()> {
     match fs::symlink_metadata(path) {
         Ok(m) => ensure!(
             !m.file_type().is_symlink(),
-            "Odmowa użycia dowiązania symbolicznego w magazynie logowania."
+            "Symbolic links are not allowed in credential storage."
         ),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(e.into()),
@@ -336,7 +340,7 @@ pub fn read_credential(path: &Path) -> Result<Option<Credential>> {
     };
     ensure!(
         f.metadata()?.is_file(),
-        "Logowanie musi być zwykłym plikiem."
+        "Credentials must be stored in a regular file."
     );
     let mut bytes = Vec::new();
     f.take(MAX_AUTH + 1).read_to_end(&mut bytes)?;
@@ -344,8 +348,8 @@ pub fn read_credential(path: &Path) -> Result<Option<Credential>> {
 }
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     reject_symlink(path)?;
-    let parent = path.parent().context("Brak katalogu docelowego.")?;
-    ensure!(parent.is_dir(), "Brak katalogu docelowego.");
+    let parent = path.parent().context("Destination directory not found.")?;
+    ensure!(parent.is_dir(), "Destination directory not found.");
     let mut temp = tempfile::NamedTempFile::new_in(parent)?;
     temp.as_file()
         .set_permissions(fs::Permissions::from_mode(0o600))?;

@@ -1,89 +1,98 @@
 # Codex Sub Switcher
 
-Natywna aplikacja macOS w Rust / GPUI Kit, która przełącza konta subskrypcyjne używane przez Codex CLI. Lokalne proxy wybiera konto dla każdego nowego żądania; przełączenie nie restartuje CLI i nie przerywa już rozpoczętej odpowiedzi.
+A native macOS app built with Rust and GPUI Kit for switching subscription accounts used by Codex CLI. A local proxy selects the account for each new request. Switching does not restart the CLI or interrupt a response already in progress.
 
-![Kompaktowy widok z fikcyjnymi kontami](docs/compact-dark.png)
+The app interface is in English, including menus, dialogs, notifications, and error messages. Dialogs provided by macOS or your browser may follow the system language.
 
-## Uruchomienie
+![Account overview with synthetic demo accounts](docs/compact-dark.png)
 
-Wymagane: macOS, Rust/Cargo i zainstalowany Codex CLI. Integrację sprawdzono z **Codex CLI 0.154.0**.
+## Getting started
+
+Requires macOS, Rust/Cargo, and Codex CLI. The integration was checked with **Codex CLI 0.154.0**.
 
 ```sh
 scripts/bundle.sh
 open 'dist/Codex Sub Switcher.app'
 ```
 
-Do pracy nad kodem: `cargo run --locked`. Paczka aplikacji jest podpisywana ad hoc lokalnie; nie jest notaryzowanym wydaniem do dystrybucji.
+For development, use `cargo run --locked`. The app bundle is signed ad hoc locally; it is not a notarized distribution release.
 
-1. Kliknij **Dodaj konto** i dokończ zwykłe logowanie Codex w przeglądarce. Powtórz dla drugiego konta. Każde logowanie ma osobny katalog roboczy i nie wylogowuje zwykłego CLI.
-2. Kliknij **Przełącz** przy wybranym koncie.
-3. Wybierz jeden sposób połączenia terminala opisany poniżej.
-4. Przy wyczerpaniu limitu kliknij **Przełącz** przy drugim koncie. Kolejne żądanie użyje tego konta. Nie ma automatycznego przełączania ani ponawiania generacji po błędzie limitu.
+1. Click **Add account** and complete the standard Codex sign-in in your browser. Repeat for another account. Each sign-in uses its own working directory and does not sign out your regular CLI.
+2. Click **Switch** next to the account you want to use.
+3. Connect your terminal using one of the options below.
+4. When a limit is exhausted, click **Switch** next to another account. The next request will use it. The app does not switch accounts or retry generation automatically after a limit error.
 
-Aplikacja musi pozostawać uruchomiona podczas używania proxy. Czerwony przycisk zamknięcia okna chowa ją do paska menu macOS, usuwa ikonę z Docka oraz zachowuje stan okna, proxy i odświeżanie limitów. Pasek menu pokazuje procent **pozostałego** limitu aktywnego konta: np. **91%** dla jednego okna lub **5h: 40% · 7d: 80%** dla obu. Wartości aktualizują się po każdym odświeżeniu limitów (automatycznie co minutę) oraz przy przełączeniu konta. Podczas odczytu pozostaje ostatni wynik; brak aktywnego konta, brak danych lub błąd odczytu oznacza **—%**. Procenty w całej aplikacji są prezentowane bez miejsc po przecinku. Rozwinięte menu pokazuje aktywne konto, pozostałe limity i terminy resetów bez otwierania okna. Kliknij je, aby wybrać **Pokaż okno**, **Schowaj okno** lub **Zakończ Codex Sub Switcher**. Ponowne pokazanie okna z menu paska przywraca ikonę w Docku. Dopiero **Zakończ** lub **⌘Q** zatrzymuje proxy. Żółty przycisk zachowuje standardową minimalizację macOS do Docka. Jeśli utworzenie ikony tray’a zawiedzie, zamknięcie okna nadal kończy aplikację, aby nie zostawić jej bez dostępu do sterowania.
+The app must remain running while you use the proxy. Closing its window hides it in the macOS menu bar and removes its Dock icon, while preserving the window state, proxy, and limit refreshes. The menu bar shows the active account's **remaining** capacity: **91%** for a single window, or **5h: 40% · 7d: 80%** for both. Values update after each refresh (automatically every minute) and when switching accounts. The last result remains visible during a refresh; no active account, missing data, or a refresh error displays **—%**. All displayed percentages are whole numbers.
 
-### Bez zmiany konfiguracji
+Open the menu to see the active account, remaining limits, and reset times, or choose **Show window**, **Hide window**, or **Quit Codex Sub Switcher**. Showing the window restores the Dock icon. Only **Quit** or **⌘Q** stops the proxy. The yellow window button retains standard macOS minimization to the Dock. If creating the menu bar item fails, closing the window quits the app so it cannot remain running without accessible controls.
 
-Kliknij **Kopiuj polecenie** i wklej je w terminalu w katalogu projektu. Launcher `codex-switch` przekazuje argumenty do prawdziwego CLI. Możesz dopisać `resume`, `resume --last` lub inne zwykłe argumenty Codex.
+### Connect without changing configuration
 
-Zwykłe polecenie `codex` nadal używa dotychczasowej konfiguracji. Proces już uruchomiony poza proxy trzeba jednorazowo zakończyć i wznowić przez launcher; potem zmiany kont nie wymagają restartu.
+Click **Copy command** and paste it into a terminal in your project directory. The `codex-switch` launcher forwards arguments to the real CLI. You can add `resume`, `resume --last`, or other standard Codex arguments.
 
-### Opcjonalny patch `config.toml`
+The regular `codex` command continues using its existing configuration. A process started outside the proxy needs to be stopped and resumed through the launcher once; subsequent account switches do not require a restart.
 
-Kliknij **Włącz w config.toml** i potwierdź zmianę pokazaną w oknie. Aplikacja:
+### Optional `config.toml` integration
 
-- tworzy prywatną kopię konfiguracji;
-- zmienia domyślny `model_provider` na `subscription_switcher`;
-- dodaje konfigurację dostawcy Responses kierującą na `127.0.0.1`;
-- ustawia pomocnicze polecenie dostarczające klucz lokalnego proxy, bez tokenów OAuth w `config.toml`;
-- zachowuje komentarze i pozostałe ustawienia.
+Click **Enable in config.toml** and confirm the change shown in the dialog. The app:
 
-Od tego momentu **nowo uruchamiane zwykłe `codex` z dowolnego katalogu** używa proxy, o ile konfiguracja projektu, wybrany profil lub argument `-c` nie nadpisują dostawcy. Wybór dotyczy `CODEX_HOME` widocznego w dialogu.
+- Creates a private configuration backup.
+- Changes the default `model_provider` to `subscription_switcher`.
+- Adds a Responses provider pointing to `127.0.0.1`.
+- Configures a helper command to supply the local proxy key, without OAuth tokens in `config.toml`.
+- Preserves comments and other settings.
 
-**Przywróć config.toml** odtwarza poprzedni wybór dostawcy i usuwa własną sekcję proxy, zachowując inne późniejsze edycje. Gdy ktoś ręcznie zmieni sekcję proxy, aplikacja odmawia jej nadpisania i zachowuje kopię. Kopie konfiguracji pozostają w katalogu danych aplikacji. Przed przeniesieniem/usunięciem aplikacji należy przywrócić konfigurację, ponieważ wskazuje ona bezwzględną ścieżkę do pliku wykonywalnego.
+Afterward, **new `codex` sessions started from any directory** use the proxy unless project configuration, the selected profile, or a `-c` argument overrides the provider. The change applies to the `CODEX_HOME` shown in the dialog.
 
-## Granice działania
+**Restore config.toml** restores the previous provider selection and removes the app's proxy section while preserving later unrelated edits. If the proxy section has been changed manually, the app refuses to overwrite it and retains the backup. Backups remain in the app's data directory. Restore the configuration before moving or removing the app, because it references the executable's absolute path.
 
-- Wybór konta dotyczy wszystkich terminali korzystających z tego proxy. Żądanie rozpoczęte przed kliknięciem jest przypisane do poprzedniego konta, również podczas odświeżania tokenu.
-- Proxy obsługuje listę modeli, Responses przez HTTP/SSE oraz endpoint kompaktowania. WebSocket jest wyłączony w konfiguracji dostawcy. Identyfikatory kontynuacji `previous_response_id` są odrzucane: wymagane jest przesłanie historii przez CLI.
-- Rozmowa, narzędzia, pliki i uprawnienia pozostają po stronie CLI. Proxy nie modyfikuje historii ani zapisów sesji. Pełny scenariusz długiej rozmowy z kompakcją i zmianą **dwóch rzeczywistych kont** wymaga dalszej weryfikacji.
-- Karta konta pokazuje plan zapisany przy logowaniu oraz bieżące procentowe zużycie okien zwróconych przez usługę limitów Codex (np. 5h i weekly). Nie zakłada dostępności okna na podstawie planu. Reset ma lokalną datę, godzinę i czas pozostały; przekroczenie daty nie zeruje samodzielnie zużycia. Dane są odświeżane po otwarciu, po operacjach na kontach, co minutę po zakończeniu poprzedniego odczytu oraz przyciskiem **Odśwież limity**. Błąd zachowuje ostatni wynik z oznaczeniem nieaktualności. Brak okien w odpowiedzi nie oznacza nieograniczonej subskrypcji.
-- Liczniki w nagłówku dotyczą wyłącznie ruchu generacji tego proxy. `/status` CLI nie jest źródłem informacji o wybranym koncie proxy. Instrukcja połączenia terminala jest dostępna pod **Pokaż instrukcję**.
-- Wycofane lub nieważne logowanie wymaga ponownego dodania konta. Odświeżanie tokenów jest automatyczne, z zapisem rotowanego refresh tokenu i jednym ponowieniem po HTTP 401, zanim zacznie płynąć odpowiedź.
-- **Importuj konto CLI** obsługuje magazyn `file`. To migracja istniejącego logowania: nie używaj jednocześnie jego kopii w starych procesach CLI i proxy, ponieważ odświeżanie może rotować wspólny refresh token. Do niezależnego równoległego użycia wybierz **Dodaj konto**. `keyring`, `auto` i `ephemeral` nie są importowane.
-- Proxy obejmuje ruch do dostawcy modelu. Nie zastępuje tożsamości używanej przez inne usługi Codex, np. zadania cloud i konektory.
+## Behavior and limitations
 
-## Powiadomienia o odnowieniu limitów
+- Account selection applies to every terminal using this proxy. A request started before a switch remains assigned to its original account, including during token refresh.
+- The proxy supports the model list, Responses over HTTP/SSE, and the compaction endpoint. WebSocket is disabled in the provider configuration. `previous_response_id` continuation identifiers are rejected; the CLI must send conversation history.
+- Conversations, tools, files, and permissions remain with the CLI. The proxy does not modify history or saved sessions. A complete long-conversation scenario with compaction and switching between **two real accounts** still needs verification.
+- Each account row shows the plan saved at sign-in and the remaining capacity of the windows reported by the Codex limits service, such as 5h and weekly. **% left** and bar fill represent remaining capacity: 100% is full and 0% is empty. Bars and values are green above 10% and red at 10% or below. Available windows are never inferred from the plan.
+- Reset times use local dates and times. Passing a reset deadline does not restore capacity locally. Data refreshes at startup, after account operations, every minute after the previous refresh completes, and through **Refresh**. Errors preserve the last result with an outdated-data warning. Missing windows do not imply an unlimited subscription.
+- Footer counters only cover generation traffic through this proxy. CLI `/status` is not an authoritative source for the selected proxy account. Terminal connection instructions are under **Show instructions**.
+- Revoked or invalid credentials require adding the account again. Token refresh is automatic, persists rotated refresh tokens, and retries once after HTTP 401 before response streaming begins.
+- **Import from CLI** supports `file` credential storage. This migrates an existing sign-in: do not use copies of it simultaneously in old CLI processes and the proxy, because refreshing may rotate their shared refresh token. Use **Add account** for independent simultaneous sessions. `keyring`, `auto`, and `ephemeral` stores are not imported.
+- The proxy handles model-provider traffic. It does not replace the identity used by other Codex services, such as cloud tasks or connectors.
 
-Po udanym odświeżeniu aplikacja porównuje użycie każdego konta z jego poprzednim udanym odczytem. Gdy użycie danego okna spada z wartości większej od 0 do dokładnie 0%, wysyła powiadomienie systemowe z adresem konta i nazwami odnowionych limitów. Dotyczy to również nieaktywnych kont i pracy ze schowanym oknem. Kliknięcie powiadomienia pokazuje okno aplikacji.
+## Limit reset notifications
 
-Pierwszy odczyt po uruchomieniu ustala punkt odniesienia. Kolejne odczyty 0% nie powtarzają powiadomienia; nowy wzrost i spadek do zera może wywołać następne. Błąd odczytu, brak okna limitu i sam upływ terminu resetu nie wywołują powiadomienia. Ręczny restart wykonany w aplikacji, także oczekujący na potwierdzenie wyniku, jest pomijany. Porównanie wykrywa zaobserwowany spadek — nie rozstrzyga, czy był to reset planowy, czy dodatkowe odnowienie przez usługę.
+After a successful refresh, the app compares each account's limits with its previous successful reading. When a window's remaining capacity returns from below 100% to exactly 100%, it sends a system notification naming the account and restored limits. This also applies to inactive accounts and while the window is hidden. Clicking the notification shows the app window.
 
-Powiadomienia macOS wymagają uruchomienia paczki **Codex Sub Switcher.app** oraz zgody systemowej na powiadomienia tej aplikacji. Przy pierwszej próbie wysłania macOS poprosi o zgodę; ustawienia można później zmienić w **Ustawienia systemowe → Powiadomienia → Codex Sub Switcher**. Przy `cargo run` powiadomienia systemowe są wyłączone przez GPUI.
+The API still reports usage as `used_percent`, so detecting a full reset means comparing previous usage greater than zero with new usage equal to zero. Rounding the displayed remaining capacity to 100% does not trigger a notification.
 
-## Ręczne restarty limitów
+The first reading after launch establishes a baseline. Repeated readings of 100% remaining do not repeat the notification; using some capacity and then restoring it fully can trigger another. A failed reading, missing window, or elapsed reset deadline does not trigger a notification. Manual resets initiated in the app, including those awaiting confirmation, are excluded. The comparison detects an observed reset; it does not distinguish scheduled resets from additional capacity granted by the service.
 
-Każdy wiersz konta pokazuje liczbę restartów i najbliższy termin. **Szczegóły** rozwija wszystkie daty ważności oraz przycisk użycia restartu. Lista jest uporządkowana według dokładnego terminu wygaśnięcia, z restartami bez daty na końcu. **Następny do użycia** oznacza najwcześniej wygasający dostępny restart typu `codex_rate_limits`; wygasłe, wykorzystane i nieznane typy nie są wybierane.
+Notifications require running **Codex Sub Switcher.app** and granting macOS notification permission. The app requests permission at startup, without waiting for a limit reset. Notifications detected while the permission request is pending are sent only after permission is granted, following [Apple's authorization guidance](https://developer.apple.com/documentation/usernotifications/asking-permission-to-use-notifications). Denial or an authorization error discards pending notifications.
 
-**Użyj restartu** otwiera potwierdzenie z kontem i datą ważności wybranego restartu. Aplikacja wysyła konkretne `credit_id` z ostatniego odczytu, zamiast polegać na kolejności serwera. Jeśli wybrany restart wygasł lub zmienił się wybór podczas otwartego dialogu, wymagane jest ponowne potwierdzenie. Nie ma automatycznego zużywania restartów ani zakupów.
+Permission status appears below the refresh information. **Test notification** checks permission again and sends an example notification without fetching or resetting limits. macOS remembers previous decisions, so another launch or test may not show a prompt. Change permission in **System Settings → Notifications → Codex Sub Switcher**, then use the test button. **Permission granted** reports authorization, not confirmation that a banner was displayed; presentation also depends on notification settings and Focus mode. When using `cargo run`, the app explains that notifications require an `.app` bundle.
 
-Po błędzie sieci **Ponów restart** używa tego samego ID restartu i identyfikatora operacji. Zapis jest zachowywany między uruchomieniami do uzyskania rozpoznanej odpowiedzi. Nowy reset jest blokowany, gdy nie udało się pobrać dat, odczyt jest nieaktualny albo nie ma odpowiedniego restartu. Po operacji limity są pobierane ponownie; UI nie zeruje procentów samodzielnie.
+## Manual limit resets
 
-[Podgląd dat ważności](docs/reset-expirations.png) · [Potwierdzenie](docs/reset-confirmation.png) · [Weryfikacja](docs/tray-resets-validation.md)
+Each account row shows the number of reset credits and the nearest expiration date. **Details** reveals all expiration dates and the reset button. Credits are ordered by their exact expiration time, with undated credits last. **Next to use** identifies the earliest-expiring eligible `codex_rate_limits` credit; expired, redeemed, and unknown types are excluded.
 
-## Dane i bezpieczeństwo
+**Use reset** opens a confirmation naming the account and the selected credit's expiration date. The app sends the specific `credit_id` from the latest reading rather than relying on server ordering. If the credit expires or the selection changes while the dialog is open, confirmation is required again. Credits are never consumed or purchased automatically.
 
-Dane domyślnie znajdują się w `~/Library/Application Support/Codex Sub Switcher`. Profile zawierają tokeny OAuth w plikach JSON, tak jak magazyn plikowy CLI; **nie są szyfrowane Keychainem**. Katalogi mają uprawnienia `0700`, pliki z poświadczeniami i kopie konfiguracji `0600`. Zapis używa pliku tymczasowego, `fsync` i atomowej podmiany. Dane nie trafiają do repozytorium.
+After a network error, **Retry reset** uses the same credit ID and operation ID. The request is retained across launches until a recognized response arrives. New resets are blocked when expiration dates cannot be fetched, readings are outdated, or no eligible credit is available. Limits are fetched again after the operation; the UI does not restore percentages on its own.
 
-Proxy nasłuchuje tylko na IPv4 loopback i wymaga losowego 256-bitowego klucza lokalnego. Odrzuca przeglądarkowe żądania z nagłówkiem Origin. Klucz i port są zachowywane między uruchomieniami. Uwierzytelnienie dostawcy modelu pobiera klucz przez `auth.command`, a nie ze zmiennych przekazywanych do narzędzi CLI. Tokeny subskrypcji są wysyłane tylko do stałych endpointów OpenAI/ChatGPT. Nie ma logowania promptów ani poświadczeń.
+[Expiration details](docs/reset-expirations.png) · [Confirmation dialog](docs/reset-confirmation.png) · [Earlier validation](docs/tray-resets-validation.md)
 
-Zmienne do niestandardowego środowiska:
+## Data and security
 
-- `CODEX_HOME`: katalog konfiguracji i sesji CLI.
-- `CODEX_SWITCHER_HOME`: osobny katalog danych switchera.
-- `CODEX_SWITCHER_CODEX`: bezwzględna ścieżka do zainstalowanego CLI.
+Data is stored in `~/Library/Application Support/Codex Sub Switcher` by default. Profiles contain OAuth tokens in JSON files, like the CLI's file credential store; **they are not encrypted using Keychain**. Directories use `0700` permissions; credential files and configuration backups use `0600`. Writes use a temporary file, `fsync`, and atomic replacement. Account data is not stored in this repository.
 
-## Sprawdzenia
+The proxy listens only on IPv4 loopback and requires a random 256-bit local key. It rejects browser requests carrying an Origin header. The key and port persist across launches. Model-provider authentication obtains the key through `auth.command`, not through environment variables passed to CLI tools. Subscription tokens are sent only to fixed OpenAI/ChatGPT endpoints. Prompts and credentials are not logged.
+
+Environment overrides:
+
+- `CODEX_HOME`: CLI configuration and session directory.
+- `CODEX_SWITCHER_HOME`: separate switcher data directory.
+- `CODEX_SWITCHER_CODEX`: absolute path to the installed CLI.
+
+## Checks
 
 ```sh
 cargo fmt --check
@@ -91,26 +100,35 @@ cargo test --locked
 cargo clippy --locked --all-targets -- -D warnings
 ```
 
-Opcjonalny test z zainstalowanym CLI używa wyłącznie fikcyjnych poświadczeń i lokalnego serwera:
+An optional test using an installed CLI uses only synthetic credentials and a local server:
 
 ```sh
 cargo test --locked installed_codex_accepts -- --ignored
 ```
 
-Oddzielny `live_subscription_smoke` jest domyślnie pomijany. Wymaga świadomego ustawienia `CODEX_SWITCHER_LIVE_AUTH` na lokalny plik poświadczeń, zbudowania `target/debug/codex-sub-switcher` i wykonuje jedno małe żądanie rzeczywistej subskrypcji. Nie odświeża ani nie zapisuje źródłowego logowania.
+The separate `live_subscription_smoke` test is ignored by default. It requires explicitly setting `CODEX_SWITCHER_LIVE_AUTH` to a local credentials file and building `target/debug/codex-sub-switcher`. It makes one small request using a real subscription and does not refresh or save the source credentials.
 
-Wyniki i ograniczenia weryfikacji są w [docs/validation.md](docs/validation.md). Fikcyjne dane do prób GUI: `python3 scripts/demo-data.py /tmp/switcher-demo/store`; uruchom aplikację z osobnymi `CODEX_SWITCHER_HOME` i `CODEX_HOME`. Nie wysyłaj tych fikcyjnych tokenów do prawdziwej usługi.
+For GUI screenshots, generate six synthetic accounts with `python3 scripts/demo-data.py /tmp/switcher-demo/store` and use separate `CODEX_SWITCHER_HOME` and `CODEX_HOME` directories. The debug-only `--demo-usage` argument (or `CODEX_SWITCHER_DEMO=1`) displays synthetic limits without calling the usage endpoint, consuming reset credits, or requesting system notification permission. The app labels this as demo mode and disables the notification test button. Never send synthetic credentials to the real service.
 
-## Źródła i zgodność
+Earlier validation reports: [limits](docs/usage-validation.md), [tray and manual resets](docs/tray-resets-validation.md), and [compact layout](docs/design-validation.md). These reports describe their dated verification runs, not every subsequent change.
 
-- [Uwierzytelnianie Codex](https://learn.chatgpt.com/docs/auth): subskrypcje, magazyny logowania, odświeżanie.
-- [Konfiguracja Codex](https://learn.chatgpt.com/docs/config-file/config-reference): dostawcy modeli i konfiguracja klienta.
-- [Kod Codex 0.154.0](https://github.com/openai/codex/tree/36eab01061df3cde5f95ec20a526777b430091ba): schemat `model_providers.auth`, transport oraz cykl tokenów. Integracja korzysta z backendu subskrypcyjnego Codex, który może zmieniać się niezależnie od publicznego API.
+## Screenshots
 
-Fasada `gpui-kit` jest przypięta do 0.6.0. `Cargo.lock` rozwiązuje `gpui-component`, `gpui-base`, `gpui-kit-assets` do 0.6.1, a `gpui-pre` do 0.3.4. API sprawdzono w tych źródłach, a nie wyłącznie w przykładach skilla.
+All screenshots were refreshed on **September 12, 2026**, using the English app and six synthetic accounts. The current layout has a single page scroll, compact account rows, and shared refresh information. See [capture details](docs/screenshots.md) for the scope.
 
-Weryfikacja limitów: [docs/usage-validation.md](docs/usage-validation.md).
+- [Light theme](docs/compact-light.png)
+- [Dark theme](docs/compact-dark.png)
+- [Expanded account details](docs/compact-details-dark.png)
+- [Narrow window](docs/compact-narrow.png)
+- [Reset expiration dates](docs/reset-expirations.png)
+- [Reset confirmation](docs/reset-confirmation.png)
+- [Terminal connection instructions — light](docs/ui-light.png)
+- [Terminal connection instructions — dark](docs/ui-dark.png)
 
-Podgląd nowych kart: [jasny motyw](docs/usage-light.png), [ciemny motyw](docs/usage-dark.png). Debugowy argument `--demo-usage` pokazuje syntetyczne limity bez wywoływania endpointu usage; używaj wyłącznie z kontami demonstracyjnymi i osobnymi katalogami danych.
+## Sources and compatibility
 
-Nowy układ: jeden scroll całej strony, zwarte wiersze i wspólna informacja o odświeżaniu. [Jasny motyw](docs/compact-light.png) · [Ciemny motyw](docs/compact-dark.png) · [Sprawdzenia projektu UI](docs/design-validation.md).
+- [Codex authentication](https://learn.chatgpt.com/docs/auth): subscriptions, credential storage, and refresh.
+- [Codex configuration](https://learn.chatgpt.com/docs/config-file/config-reference): model providers and client configuration.
+- [Codex 0.154.0 source](https://github.com/openai/codex/tree/36eab01061df3cde5f95ec20a526777b430091ba): `model_providers.auth`, transport, and token lifecycle. This integration uses the Codex subscription backend, which can change independently of the public API.
+
+The `gpui-kit` facade is pinned to 0.6.0. `Cargo.lock` resolves `gpui-component`, `gpui-base`, and `gpui-kit-assets` to 0.6.1, and `gpui-pre` to 0.3.4. APIs were checked against these sources.

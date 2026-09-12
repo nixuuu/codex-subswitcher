@@ -17,7 +17,7 @@ pub fn codex_binary() -> Result<PathBuf> {
         let path = PathBuf::from(path);
         ensure!(
             path.is_absolute() && path.is_file(),
-            "CODEX_SWITCHER_CODEX musi wskazywać plik bezwzględną ścieżką."
+            "CODEX_SWITCHER_CODEX must be an absolute path to a file."
         );
         return Ok(native_if_packaged(path));
     }
@@ -37,7 +37,7 @@ pub fn codex_binary() -> Result<PathBuf> {
         .map(|dir| dir.join("codex"))
         .find(|p| p.is_file())
         .map(native_if_packaged)
-        .context("Nie znaleziono Codex CLI. Ustaw CODEX_SWITCHER_CODEX na ścieżkę do codex.")
+        .context("Codex CLI not found. Set CODEX_SWITCHER_CODEX to the path to codex.")
 }
 // The npm shim needs Node on PATH. Finder-launched apps often do not have it;
 // use the native executable in the same official package when available.
@@ -105,20 +105,20 @@ pub fn login(store: &Store, cancel: Arc<AtomicBool>) -> Result<crate::accounts::
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
-            .context("Nie udało się rozpocząć logowania.")?,
+            .context("Could not start sign-in.")?,
     );
     let start = Instant::now();
     loop {
         if cancel.load(Ordering::Relaxed) {
-            bail!("Logowanie anulowane.");
+            bail!("Sign-in canceled.");
         }
         if start.elapsed() > Duration::from_secs(300) {
-            bail!("Upłynął czas logowania. Spróbuj ponownie.");
+            bail!("Sign-in timed out. Try again.");
         }
         if let Some(status) = child.0.try_wait()? {
             ensure!(
                 status.success(),
-                "Logowanie nie powiodło się. Sprawdź, czy inny proces logowania nie używa portu 1455."
+                "Sign-in failed. Check whether another sign-in process is using port 1455."
             );
             return store.import_from(&home.path().join("auth.json"));
         }
@@ -170,7 +170,7 @@ pub fn provider_args(port: u16, binary: &Path, connection: &Path) -> Vec<String>
 pub fn run_cli(store: &Store, args: impl Iterator<Item = std::ffi::OsString>) -> Result<()> {
     let connection: Connection = serde_json::from_slice(
         &std::fs::read(store.root.join("connection.json"))
-            .context("Najpierw uruchom aplikację Codex Sub Switcher.")?,
+            .context("Start Codex Sub Switcher first.")?,
     )?;
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(async {
@@ -184,22 +184,19 @@ pub fn run_cli(store: &Store, args: impl Iterator<Item = std::ffi::OsString>) ->
             .bearer_auth(&connection.token)
             .send()
             .await
-            .context("Proxy jest wyłączone. Uruchom aplikację switchera.")?;
-        ensure!(
-            response.status().is_success(),
-            "Uruchom ponownie aplikację switchera."
-        );
+            .context("The proxy is offline. Start the switcher app.")?;
+        ensure!(response.status().is_success(), "Restart the switcher app.");
         let value: serde_json::Value = response.json().await?;
         ensure!(
             value["service"] == "codex-sub-switcher",
-            "Pod podanym portem nie działa switcher."
+            "No switcher is running on the specified port."
         );
         anyhow::Ok(())
     })?;
     drop(runtime);
     ensure!(
         store.active_id()?.is_some(),
-        "Najpierw wybierz konto w aplikacji."
+        "Select an account in the app first."
     );
     let error = Command::new(codex_binary()?)
         .args(provider_args(

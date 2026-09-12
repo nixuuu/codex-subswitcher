@@ -2,6 +2,7 @@ mod accounts;
 mod config;
 mod dock;
 mod launcher;
+mod notifications;
 mod palette;
 mod proxy;
 mod resets;
@@ -22,6 +23,12 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
+
+#[cfg(debug_assertions)]
+fn demo_mode() -> bool {
+    std::env::args().any(|arg| arg == "--demo-usage")
+        || std::env::var_os("CODEX_SWITCHER_DEMO").is_some_and(|value| value == "1")
+}
 
 #[derive(Default)]
 struct UsageView {
@@ -150,7 +157,7 @@ impl Switcher {
             }
         }));
         #[cfg(debug_assertions)]
-        if std::env::args().any(|a| a == "--demo-usage") {
+        if demo_mode() {
             for (i, account) in this.snapshot.accounts.iter().enumerate() {
                 let window = |seconds, used, reset| serde_json::json!({"limit_window_seconds":seconds,"used_percent":used,"reset_at":chrono::Utc::now().timestamp()+reset});
                 let data = serde_json::json!({"rate_limit_reset_credits":{"available_count":2},"rate_limit":{"primary_window":window(if i % 3 == 0 {18000} else {604800}, [37,18,61,82,6,96][i % 6], 7200), "secondary_window":if i % 3 == 0 {window(604800,64,172800)} else {serde_json::Value::Null}}});
@@ -179,13 +186,13 @@ impl Switcher {
         let view = account.and_then(|a| self.usage.get(&a.id));
         let mut status = tray::status_for(account, view, self.usage_loading, self.now);
         if self.proxy.is_none() {
-            status.lines.push("Proxy niedostępne".into());
+            status.lines.push("Proxy unavailable".into());
         }
         tray::update(status, cx);
     }
     fn refresh_usage(&mut self, cx: &mut Context<Self>) {
         #[cfg(debug_assertions)]
-        if std::env::args().any(|a| a == "--demo-usage") {
+        if demo_mode() {
             return;
         }
         if self.usage_loading || self.busy {
@@ -236,24 +243,27 @@ impl Switcher {
                             };
                             let resets = this.usage.entry(id.clone()).or_default().apply(result);
                             if !resets.is_empty() {
-                                cx.show_system_notification(SystemNotification {
-                                    tag: format!("silent-reset-{id}").into(),
-                                    title: "Limity konta zostały odnowione".into(),
-                                    body: format!(
-                                        "{} · {}: użycie spadło do 0% po odświeżeniu.",
-                                        account.email,
-                                        resets.join(", ")
-                                    )
-                                    .into(),
-                                    actions: Vec::new(),
-                                });
+                                notifications::show(
+                                    SystemNotification {
+                                        tag: format!("silent-reset-{id}").into(),
+                                        title: "Account limits have reset".into(),
+                                        body: format!(
+                                            "{} · {}: 100% of the limit is available again after refreshing.",
+                                            account.email,
+                                            resets.join(", ")
+                                        )
+                                        .into(),
+                                        actions: Vec::new(),
+                                    },
+                                    cx,
+                                );
                             }
                         }
                     }
                     Err(_) => {
                         for account in &this.snapshot.accounts {
                             this.usage.entry(account.id.clone()).or_default().error =
-                                Some("Odczyt limitów został przerwany.".into());
+                                Some("Limit refresh was interrupted.".into());
                         }
                     }
                 }
@@ -271,8 +281,8 @@ impl Switcher {
             return;
         };
         #[cfg(debug_assertions)]
-        if std::env::args().any(|a| a == "--demo-usage") {
-            self.status = "Tryb demonstracyjny: żaden restart nie został wykorzystany.".into();
+        if demo_mode() {
+            self.status = "Demo mode: no reset credit was used.".into();
             cx.notify();
             return;
         }
@@ -283,7 +293,9 @@ impl Switcher {
                 .and_then(|d| d.next(chrono::Utc::now()))
                 .is_none_or(|c| Some(&c.id) != credit_id.as_ref())
         {
-            self.status = "Lista restartów zmieniła się lub restart wygasł. Odśwież dane i potwierdź ponownie.".into();
+            self.status =
+                "The reset list has changed or the credit has expired. Refresh and confirm again."
+                    .into();
             self.error = true;
             self.refresh_usage(cx);
             cx.notify();
@@ -291,7 +303,7 @@ impl Switcher {
         }
         self.busy = true;
         self.error = false;
-        self.status = "Wykorzystywanie restartu…".into();
+        self.status = "Using reset credit…".into();
         if let Some(data) = self.usage.get_mut(&id).and_then(|v| v.data.as_mut()) {
             data.pending_reset = true;
         }
@@ -309,12 +321,13 @@ impl Switcher {
                     }
                     _ => {
                         this.status = match result {
-                            Ok(Err(e)) => format!("Restart niepotwierdzony: {e}").into(),
-                            _ => "Restart niepotwierdzony. Ponowienie zachowa identyfikator operacji.".into(),
+                            Ok(Err(e)) => format!("Reset not confirmed: {e}").into(),
+                            _ => "Reset not confirmed. Retrying will preserve the operation ID."
+                                .into(),
                         };
                         this.error = true;
                         if let Some(view) = this.usage.get_mut(&id) {
-                            view.error = Some("Wynik restartu wymaga sprawdzenia.".into());
+                            view.error = Some("The reset result needs to be checked.".into());
                         }
                     }
                 }
@@ -382,13 +395,13 @@ fn main() {
             let path = args
                 .next()
                 .map(std::path::PathBuf::from)
-                .ok_or_else(|| anyhow::anyhow!("Brak ścieżki połączenia."))?;
+                .ok_or_else(|| anyhow::anyhow!("Missing connection file path."))?;
             let c: proxy::Connection = serde_json::from_slice(&std::fs::read(path)?)?;
             println!("{}", c.token);
             Ok(())
         })();
         if result.is_err() {
-            eprintln!("Nie można odczytać połączenia proxy.");
+            eprintln!("Could not read the proxy connection file.");
             std::process::exit(1)
         }
         return;
@@ -423,6 +436,8 @@ fn main() {
             }
         });
         gpui_kit::init(cx);
+        gpui_kit::component::set_locale("en");
+        notifications::install(cx);
         let mode = if matches!(
             cx.window_appearance(),
             WindowAppearance::Dark | WindowAppearance::VibrantDark
@@ -441,7 +456,7 @@ fn main() {
         let tray_available = match tray::install(cx) {
             Ok(()) => true,
             Err(error) => {
-                eprintln!("Nie udało się utworzyć ikony paska menu: {error}");
+                eprintln!("Could not create the menu bar item: {error}");
                 false
             }
         };
@@ -466,7 +481,7 @@ fn main() {
                 let view = cx.new(|cx| Switcher::new(store, snapshot, proxy, command, cx));
                 cx.new(|cx| Root::new(view, window, cx))
             }) {
-                eprintln!("Nie udało się otworzyć okna: {e}");
+                eprintln!("Could not open the window: {e}");
             }
         })
         .detach();

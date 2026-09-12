@@ -7,7 +7,14 @@ os.chmod(root, 0o700)
 os.chmod(root / 'accounts', 0o700)
 def jwt(value):
     return 'e30.' + base64.urlsafe_b64encode(json.dumps(value).encode()).decode().rstrip('=') + '.demo'
-for user, plan in [('konto.prywatne', 'pro'), ('konto.pracownicze', 'plus')]:
+for user, plan in [
+    ('alex.work', 'plus'),
+    ('alex.personal', 'pro'),
+    ('backend.team', 'business'),
+    ('long.project.account.name', 'plus'),
+    ('frontend.team', 'pro'),
+    ('backup.account', 'pro'),
+]:
     workspace = 'demo-' + user
     ident = hashlib.sha256((workspace + '\0' + user).encode()).hexdigest()
     value = {'auth_mode':'chatgpt','OPENAI_API_KEY':None,'tokens':{

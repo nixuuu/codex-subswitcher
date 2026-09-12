@@ -46,7 +46,7 @@ fn title_for(view: Option<&crate::UsageView>) -> String {
     windows.sort_by_key(|window| window.limit_window_seconds);
     match windows.as_slice() {
         [] => "—%".into(),
-        [window] => format!("{:.0}%", 100.0 - window.used_percent),
+        [window] => format!("{:.0}%", window.remaining_percent()),
         _ => windows
             .iter()
             .map(|window| {
@@ -55,7 +55,7 @@ fn title_for(view: Option<&crate::UsageView>) -> String {
                 } else {
                     window.label()
                 };
-                format!("{label}: {:.0}%", 100.0 - window.used_percent)
+                format!("{label}: {:.0}%", window.remaining_percent())
             })
             .collect::<Vec<_>>()
             .join(" · "),
@@ -71,22 +71,22 @@ pub(super) fn status_for(
     let Some(account) = account else {
         return Status {
             title: "—%".into(),
-            account: "Nie wybrano konta".into(),
-            lines: vec!["Wybierz konto w oknie aplikacji".into()],
+            account: "No account selected".into(),
+            lines: vec!["Select an account in the app".into()],
         };
     };
     let mut lines = Vec::new();
     if let Some(data) = view.and_then(|v| v.data.as_ref()) {
         for limit in data.windows() {
             lines.push(format!(
-                "{}: {:.0}% pozostało",
+                "{}: {:.0}% remaining",
                 limit.label(),
-                100.0 - limit.used_percent
+                limit.remaining_percent()
             ));
             lines.push(limit.reset_label(now));
         }
         if data.windows().next().is_none() {
-            lines.push("Brak udostępnionych okien limitów".into());
+            lines.push("No limit windows reported".into());
         }
         if let Some(count) = data
             .reset_details
@@ -98,27 +98,27 @@ pub(super) fn status_for(
                     .map(|d| d.available_count)
             })
         {
-            lines.push(format!("Dostępne restarty: {count}"));
+            lines.push(format!("Available resets: {count}"));
         }
     } else {
         lines.push(
             if loading {
-                "Pobieranie limitów…"
+                "Loading limits…"
             } else {
-                "Limity niedostępne"
+                "Limits unavailable"
             }
             .into(),
         );
     }
     if view.is_some_and(|v| v.error.is_some()) {
-        lines.push("Błąd odczytu · dane nieaktualne".into());
+        lines.push("Refresh failed · data is outdated".into());
     }
     if loading {
-        lines.push("Odświeżanie…".into());
+        lines.push("Refreshing…".into());
     }
     if let Some(at) = view.and_then(|v| v.checked) {
         lines.push(format!(
-            "Odczyt {} · co minutę",
+            "Updated {} · refreshes every minute",
             at.with_timezone(&chrono::Local).format("%H:%M")
         ));
     }
@@ -167,9 +167,9 @@ pub fn update(status: Status, cx: &mut App) {
 }
 
 pub fn install(cx: &mut App) -> anyhow::Result<()> {
-    let show = MenuItem::new("Pokaż okno", true, None);
-    let hide = MenuItem::new("Schowaj okno", true, None);
-    let quit = MenuItem::new("Zakończ Codex Sub Switcher", true, None);
+    let show = MenuItem::new("Show window", true, None);
+    let hide = MenuItem::new("Hide window", true, None);
+    let quit = MenuItem::new("Quit Codex Sub Switcher", true, None);
     let menu = Menu::with_items(&[&show, &hide, &PredefinedMenuItem::separator(), &quit])?;
     let icon = TrayIconBuilder::new()
         .with_title("—%")
@@ -209,10 +209,10 @@ pub fn install(cx: &mut App) -> anyhow::Result<()> {
         KeyBinding::new("cmd-q", Quit, None),
     ]);
     cx.set_menus([gpui_kit::Menu::new("Codex Sub Switcher").items([
-        gpui_kit::MenuItem::action("Pokaż okno", Show),
-        gpui_kit::MenuItem::action("Schowaj okno", Hide),
+        gpui_kit::MenuItem::action("Show window", Show),
+        gpui_kit::MenuItem::action("Hide window", Hide),
         gpui_kit::MenuItem::separator(),
-        gpui_kit::MenuItem::action("Zakończ Codex Sub Switcher", Quit),
+        gpui_kit::MenuItem::action("Quit Codex Sub Switcher", Quit),
     ])]);
     cx.set_global(Tray {
         _icon: icon,
@@ -294,18 +294,18 @@ mod tests {
             status
                 .lines
                 .iter()
-                .any(|s| s.contains("Weekly") && s.contains("27% pozostało"))
+                .any(|s| s.contains("Weekly") && s.contains("27% remaining"))
         );
         assert!(!status.lines.iter().any(|s| s.starts_with("5h")));
-        assert!(status.lines.iter().any(|s| s.contains("nieaktualne")));
+        assert!(status.lines.iter().any(|s| s.contains("outdated")));
         assert!(
             status
                 .lines
                 .iter()
-                .any(|s| s.contains("Dostępne restarty: 2"))
+                .any(|s| s.contains("Available resets: 2"))
         );
         let empty = status_for(None, Some(&view), false, chrono::Utc::now());
-        assert_eq!(empty.account, "Nie wybrano konta");
+        assert_eq!(empty.account, "No account selected");
         assert_eq!(empty.title, "—%");
         assert!(!empty.lines.iter().any(|s| s.contains("27%")));
     }

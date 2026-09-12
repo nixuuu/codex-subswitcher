@@ -1,5 +1,7 @@
 # Kompaktowy widok, paleta i status tray — 2026-09-10
 
+> Screenshot assets were refreshed on September 12, 2026. This report retains its original results; see [capture details](screenshots.md).
+
 ## Wynik
 
 - Jeden przewijany obszar całej strony (`page`, trwały `ScrollHandle`). Nagłówek, konta i połączenie terminala przewijają się razem.

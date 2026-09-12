@@ -1,5 +1,7 @@
 # Limity kont — weryfikacja 2026-09-10
 
+> Screenshot assets were refreshed on September 12, 2026. This report retains its original results; see [capture details](screenshots.md).
+
 Zmiana: `src/usage.rs` (model, walidacja, etykiety), `src/proxy.rs` (odczyt kont na istniejącym runtime i wspólna blokada odświeżania OAuth), `src/main.rs` (karty, odświeżanie, stany i zwijana instrukcja), `README.md`.
 
 ## Wyniki

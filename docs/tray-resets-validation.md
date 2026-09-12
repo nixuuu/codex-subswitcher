@@ -1,5 +1,7 @@
 # Tray i ręczne restarty — 2026-09-10
 
+> Screenshot assets were refreshed on September 12, 2026. This report retains its original results; see [capture details](screenshots.md).
+
 ## Zmiany
 
 - `src/tray.rs`, `src/main.rs`: natywny status item ⇄, menu Pokaż/Schowaj/Zakończ, ⌘H/⌘Q, przechwycenie czerwonego przycisku zamknięcia, ponowne otwarcie przez lifecycle aplikacji. Ukrycie zachowuje encję okna, proxy oraz zadania limitów. Żółty przycisk pozostaje standardową minimalizacją macOS.

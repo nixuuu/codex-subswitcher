@@ -110,24 +110,24 @@ impl Proxy {
             .mode(0o600)
             .open(store.root.join("proxy.lock"))?;
         lock.try_lock_exclusive()
-            .context("Proxy jest już uruchomione w innym procesie.")?;
+            .context("The proxy is already running in another process.")?;
         let connection_path = store.root.join("connection.json");
         let saved = match std::fs::read(&connection_path) {
             Ok(bytes) => Some(
                 serde_json::from_slice::<Connection>(&bytes)
-                    .context("Niepoprawny plik połączenia proxy.")?,
+                    .context("Invalid proxy connection file.")?,
             ),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
             Err(e) => return Err(e.into()),
         };
         let port = saved.as_ref().map(|c| c.port).unwrap_or(0);
         let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).context(
-            "Port proxy jest zajęty. Zamknij poprzedni proces switchera i spróbuj ponownie.",
+            "The proxy port is in use. Close the previous switcher process and try again.",
         )?;
         listener.set_nonblocking(true)?;
         let port = listener.local_addr()?.port();
         let token = if let Some(c) = saved {
-            ensure!(c.token.len() == 64, "Niepoprawny klucz lokalnego proxy.");
+            ensure!(c.token.len() == 64, "Invalid local proxy key.");
             c.token
         } else {
             let mut random = [0u8; 32];
@@ -207,7 +207,7 @@ fn authorized(headers: &HeaderMap, token: &str) -> bool {
 }
 async fn health(State(state): State<ProxyState>, headers: HeaderMap) -> Response {
     if !authorized(&headers, &state.token) {
-        return error(StatusCode::UNAUTHORIZED, "Nieautoryzowany klient proxy.");
+        return error(StatusCode::UNAUTHORIZED, "Unauthorized proxy client.");
     }
     axum::Json(json!({"service":"codex-sub-switcher","version":1})).into_response()
 }
@@ -217,10 +217,10 @@ async fn models(
     axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Response {
     if !authorized(&headers, &state.token) {
-        return error(StatusCode::UNAUTHORIZED, "Nieautoryzowany klient proxy.");
+        return error(StatusCode::UNAUTHORIZED, "Unauthorized proxy client.");
     }
     let Ok(_permit) = state.slots.clone().try_acquire_owned() else {
-        return error(StatusCode::TOO_MANY_REQUESTS, "Proxy jest zajęte.");
+        return error(StatusCode::TOO_MANY_REQUESTS, "The proxy is busy.");
     };
     let store = state.store.clone();
     let credential = match tokio::task::spawn_blocking(move || store.active_credential()).await {
@@ -228,7 +228,7 @@ async fn models(
         _ => {
             return error(
                 StatusCode::SERVICE_UNAVAILABLE,
-                "Wybierz konto w switcherze.",
+                "Select an account in the switcher.",
             );
         }
     };
@@ -237,7 +237,7 @@ async fn models(
         Err(_) => {
             return error(
                 StatusCode::UNAUTHORIZED,
-                "Odśwież logowanie konta w switcherze.",
+                "Sign in to the account again in the switcher.",
             );
         }
     };
@@ -246,7 +246,7 @@ async fn models(
         .map(String::as_str)
         .unwrap_or("0.154.0");
     if version.len() > 80 {
-        return error(StatusCode::BAD_REQUEST, "Niepoprawna wersja klienta.");
+        return error(StatusCode::BAD_REQUEST, "Invalid client version.");
     }
     let result = state
         .client
@@ -265,10 +265,10 @@ async fn models(
                 Ok(bytes) => {
                     (status, [("content-type", "application/json")], bytes).into_response()
                 }
-                Err(_) => error(StatusCode::BAD_GATEWAY, "Nie można odczytać listy modeli."),
+                Err(_) => error(StatusCode::BAD_GATEWAY, "Could not read the model list."),
             }
         }
-        Err(_) => error(StatusCode::BAD_GATEWAY, "Nie można pobrać listy modeli."),
+        Err(_) => error(StatusCode::BAD_GATEWAY, "Could not fetch the model list."),
     }
 }
 async fn responses(State(s): State<ProxyState>, h: HeaderMap, b: Bytes) -> Response {
@@ -292,23 +292,23 @@ impl Drop for Inflight {
 }
 async fn forward(state: ProxyState, headers: HeaderMap, body: Bytes, path: &str) -> Response {
     if !authorized(&headers, &state.token) {
-        return error(StatusCode::UNAUTHORIZED, "Nieautoryzowany klient proxy.");
+        return error(StatusCode::UNAUTHORIZED, "Unauthorized proxy client.");
     }
     if headers.contains_key("content-encoding") {
         return error(
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            "Uruchom CLI przez polecenie switchera (bez kompresji żądań).",
+            "Start the CLI with the switcher command (without request compression).",
         );
     }
     let Ok(permit) = state.slots.clone().try_acquire_owned() else {
         return error(
             StatusCode::TOO_MANY_REQUESTS,
-            "Proxy obsługuje już 32 żądania. Spróbuj za chwilę.",
+            "The proxy is already handling 32 requests. Try again shortly.",
         );
     };
     let mut payload: Value = match serde_json::from_slice(&body) {
         Ok(Value::Object(v)) => Value::Object(v),
-        _ => return error(StatusCode::BAD_REQUEST, "Niepoprawne żądanie JSON."),
+        _ => return error(StatusCode::BAD_REQUEST, "Invalid JSON request."),
     };
     // The CLI HTTP transport sends full conversation input. Server-side continuation
     // IDs belong to an upstream account and cannot safely cross identities.
@@ -318,7 +318,7 @@ async fn forward(state: ProxyState, headers: HeaderMap, body: Bytes, path: &str)
     {
         return error(
             StatusCode::BAD_REQUEST,
-            "Proxy wymaga pełnej historii HTTP, bez previous_response_id.",
+            "The proxy requires full conversation history over HTTP, without previous_response_id.",
         );
     }
     if path == "/responses" {
@@ -333,7 +333,7 @@ async fn forward(state: ProxyState, headers: HeaderMap, body: Bytes, path: &str)
         _ => {
             return error(
                 StatusCode::SERVICE_UNAVAILABLE,
-                "Wybierz zapisane konto w aplikacji switchera.",
+                "Select a saved account in the switcher app.",
             );
         }
     };
@@ -342,7 +342,7 @@ async fn forward(state: ProxyState, headers: HeaderMap, body: Bytes, path: &str)
         Err(_) => {
             return error(
                 StatusCode::UNAUTHORIZED,
-                "Nie można odświeżyć logowania wybranego konta. Dodaj je ponownie lub przełącz konto.",
+                "Could not refresh credentials for the selected account. Add it again or switch accounts.",
             );
         }
     };
@@ -383,7 +383,7 @@ async fn forward(state: ProxyState, headers: HeaderMap, body: Bytes, path: &str)
             state.metrics.failures.fetch_add(1, Ordering::Relaxed);
             return error(
                 StatusCode::BAD_GATEWAY,
-                "Nie udało się połączyć z usługą Codex.",
+                "Could not connect to the Codex service.",
             );
         }
     };
@@ -395,7 +395,7 @@ async fn forward(state: ProxyState, headers: HeaderMap, body: Bytes, path: &str)
                 state.metrics.failures.fetch_add(1, Ordering::Relaxed);
                 return error(
                     StatusCode::UNAUTHORIZED,
-                    "Logowanie wygasło lub zostało cofnięte. Dodaj konto ponownie.",
+                    "Credentials have expired or been revoked. Add the account again.",
                 );
             }
         };
@@ -407,7 +407,7 @@ async fn forward(state: ProxyState, headers: HeaderMap, body: Bytes, path: &str)
             refreshed.access_token()
         )) {
             Ok(value) => value,
-            Err(_) => return error(StatusCode::BAD_GATEWAY, "Niepoprawna odpowiedź logowania."),
+            Err(_) => return error(StatusCode::BAD_GATEWAY, "Invalid authentication response."),
         };
         retry
             .headers_mut()
@@ -418,7 +418,7 @@ async fn forward(state: ProxyState, headers: HeaderMap, body: Bytes, path: &str)
                 state.metrics.failures.fetch_add(1, Ordering::Relaxed);
                 return error(
                     StatusCode::BAD_GATEWAY,
-                    "Nie udało się ponowić żądania po odświeżeniu logowania.",
+                    "Could not retry the request after refreshing credentials.",
                 );
             }
         };
@@ -440,7 +440,7 @@ async fn forward(state: ProxyState, headers: HeaderMap, body: Bytes, path: &str)
         |(mut stream, permit, inflight)| async move {
             stream.next().await.map(|chunk| {
                 (
-                    chunk.map_err(|_| std::io::Error::other("Przerwano strumień Codex.")),
+                    chunk.map_err(|_| std::io::Error::other("Codex stream interrupted.")),
                     (stream, permit, inflight),
                 )
             })
@@ -464,7 +464,7 @@ async fn consume_reset(
     .await??;
     let mut credential = refresh_if_needed(state, credential)
         .await
-        .map_err(|_| anyhow::anyhow!("Odśwież logowanie konta."))?;
+        .map_err(|_| anyhow::anyhow!("Sign in to the account again."))?;
     for attempt in 0..2 {
         let response = state
             .client
@@ -477,37 +477,33 @@ async fn consume_reset(
             .await
             .map_err(|_| {
                 anyhow::anyhow!(
-                    "Nie potwierdzono wyniku restartu. Ponów tę samą operację przyciskiem restartu."
+                    "The reset result was not confirmed. Retry the same operation with the reset button."
                 )
             })?;
         if response.status() == StatusCode::UNAUTHORIZED && attempt == 0 {
             credential = refresh_credential(state, credential, true)
                 .await
-                .map_err(|_| anyhow::anyhow!("Odśwież logowanie konta."))?;
+                .map_err(|_| anyhow::anyhow!("Sign in to the account again."))?;
             continue;
         }
         ensure!(
             response.status().is_success(),
-            "Nie potwierdzono restartu (HTTP {}). Ponowienie zachowa identyfikator operacji.",
+            "Reset not confirmed (HTTP {}). Retrying will preserve the operation ID.",
             response.status().as_u16()
         );
         let mut response = response;
         let mut bytes = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|_| anyhow::anyhow!("Nie potwierdzono odpowiedzi restartu. Ponów operację."))?
-        {
+        while let Some(chunk) = response.chunk().await.map_err(|_| {
+            anyhow::anyhow!("The reset response was not confirmed. Retry the operation.")
+        })? {
             ensure!(
                 bytes.len() + chunk.len() <= 1024 * 1024,
-                "Niepoprawna odpowiedź restartu. Ponów operację."
+                "Invalid reset response. Retry the operation."
             );
             bytes.extend_from_slice(&chunk);
         }
         let result: crate::resets::Response = serde_json::from_slice(&bytes).map_err(|_| {
-            anyhow::anyhow!(
-                "Nieznana odpowiedź restartu. Ponowienie zachowa identyfikator operacji."
-            )
+            anyhow::anyhow!("Unknown reset response. Retrying will preserve the operation ID.")
         })?;
         let store = state.store.clone();
         let id = id.to_owned();
@@ -517,35 +513,32 @@ async fn consume_reset(
         .await??;
         return Ok(result.code);
     }
-    anyhow::bail!("Odśwież logowanie konta.")
+    anyhow::bail!("Sign in to the account again.")
 }
 
 async fn fetch_usage(state: &ProxyState, id: &str, endpoint: &str) -> Result<crate::usage::Usage> {
     let bytes = fetch_account_bytes(state, id, endpoint).await?;
     let mut usage = crate::usage::Usage::parse(&bytes)
-        .map_err(|_| anyhow::anyhow!("Niepoprawna odpowiedź usługi limitów."))?;
+        .map_err(|_| anyhow::anyhow!("Invalid response from the limits service."))?;
     let store = state.store.clone();
     let account_id = id.to_owned();
     usage.pending_reset =
         tokio::task::spawn_blocking(move || crate::resets::pending(&store, &account_id)).await??;
     let details_endpoint = format!(
         "{}/rate-limit-reset-credits",
-        endpoint
-            .rsplit_once('/')
-            .context("Niepoprawny endpoint.")?
-            .0
+        endpoint.rsplit_once('/').context("Invalid endpoint.")?.0
     );
     match fetch_account_bytes(state, id, &details_endpoint).await {
         Ok(bytes) => match crate::resets::Credits::parse(&bytes) {
             Ok(details) => usage.reset_details = Some(details),
             Err(_) => {
                 usage.reset_details_error =
-                    Some("Niepoprawne daty lub dane restartów. Odśwież listę.".into())
+                    Some("Invalid reset dates or data. Refresh the list.".into())
             }
         },
         Err(_) => {
             usage.reset_details_error =
-                Some("Nie udało się pobrać dat ważności restartów. Odśwież listę.".into())
+                Some("Could not fetch reset expiration dates. Refresh the list.".into())
         }
     }
     Ok(usage)
@@ -556,7 +549,7 @@ async fn fetch_account_bytes(state: &ProxyState, id: &str, endpoint: &str) -> Re
     let credential = tokio::task::spawn_blocking(move || store.credential(&id)).await??;
     let mut credential = refresh_if_needed(state, credential)
         .await
-        .map_err(|_| anyhow::anyhow!("Odśwież logowanie konta."))?;
+        .map_err(|_| anyhow::anyhow!("Sign in to the account again."))?;
     for attempt in 0..2 {
         let mut response = state
             .client
@@ -566,33 +559,33 @@ async fn fetch_account_bytes(state: &ProxyState, id: &str, endpoint: &str) -> Re
             .timeout(Duration::from_secs(20))
             .send()
             .await
-            .map_err(|_| anyhow::anyhow!("Nie udało się połączyć z usługą limitów."))?;
+            .map_err(|_| anyhow::anyhow!("Could not connect to the limits service."))?;
         if response.status() == StatusCode::UNAUTHORIZED && attempt == 0 {
             credential = refresh_credential(state, credential, true)
                 .await
-                .map_err(|_| anyhow::anyhow!("Odśwież logowanie konta."))?;
+                .map_err(|_| anyhow::anyhow!("Sign in to the account again."))?;
             continue;
         }
         ensure!(
             response.status().is_success(),
-            "Limity niedostępne (HTTP {}).",
+            "Limits unavailable (HTTP {}).",
             response.status().as_u16()
         );
         let mut bytes = Vec::new();
         while let Some(chunk) = response
             .chunk()
             .await
-            .map_err(|_| anyhow::anyhow!("Przerwany odczyt limitów."))?
+            .map_err(|_| anyhow::anyhow!("Limit refresh interrupted."))?
         {
             ensure!(
                 bytes.len() + chunk.len() <= 1024 * 1024,
-                "Odpowiedź limitów jest zbyt duża."
+                "The limits response is too large."
             );
             bytes.extend_from_slice(&chunk);
         }
         return Ok(bytes);
     }
-    anyhow::bail!("Odśwież logowanie konta.")
+    anyhow::bail!("Sign in to the account again.")
 }
 
 async fn refresh_if_needed(state: &ProxyState, credential: Credential) -> Result<Credential> {
@@ -619,20 +612,17 @@ async fn refresh_credential(
     let response = state.client.post(&state.refresh_endpoint)
         .timeout(Duration::from_secs(30))
         .json(&json!({"client_id":"app_EMoamEEZ73f0CkXaXp7hrann","grant_type":"refresh_token","refresh_token":value["tokens"]["refresh_token"]}))
-        .send().await.context("Nie udało się odświeżyć logowania.")?;
-    ensure!(
-        response.status().is_success(),
-        "Wymagane ponowne logowanie."
-    );
+        .send().await.context("Could not refresh credentials.")?;
+    ensure!(response.status().is_success(), "Sign-in required.");
     let refreshed: Value = response
         .json()
         .await
-        .context("Niepoprawna odpowiedź logowania.")?;
+        .context("Invalid authentication response.")?;
     ensure!(
         refreshed["access_token"]
             .as_str()
             .is_some_and(|s| !s.is_empty()),
-        "Brak nowego tokenu."
+        "Missing refreshed token."
     );
     for key in ["access_token", "refresh_token", "id_token"] {
         if refreshed[key].as_str().is_some_and(|s| !s.is_empty()) {
