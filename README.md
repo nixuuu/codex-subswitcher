@@ -20,7 +20,7 @@ Do pracy nad kodem: `cargo run --locked`. Paczka aplikacji jest podpisywana ad h
 3. Wybierz jeden sposób połączenia terminala opisany poniżej.
 4. Przy wyczerpaniu limitu kliknij **Przełącz** przy drugim koncie. Kolejne żądanie użyje tego konta. Nie ma automatycznego przełączania ani ponawiania generacji po błędzie limitu.
 
-Aplikacja musi pozostawać uruchomiona podczas używania proxy. Czerwony przycisk zamknięcia okna chowa ją do paska menu macOS, usuwa ikonę z Docka oraz zachowuje stan okna, proxy i odświeżanie limitów. Menu **⇄** pokazuje aktywne konto, jego limity i terminy resetów bez otwierania okna. Kliknij je, aby wybrać **Pokaż okno**, **Schowaj okno** lub **Zakończ Codex Sub Switcher**. Ponowne pokazanie okna z menu paska przywraca ikonę w Docku. Dopiero **Zakończ** lub **⌘Q** zatrzymuje proxy. Żółty przycisk zachowuje standardową minimalizację macOS do Docka. Jeśli utworzenie ikony tray’a zawiedzie, zamknięcie okna nadal kończy aplikację, aby nie zostawić jej bez dostępu do sterowania.
+Aplikacja musi pozostawać uruchomiona podczas używania proxy. Czerwony przycisk zamknięcia okna chowa ją do paska menu macOS, usuwa ikonę z Docka oraz zachowuje stan okna, proxy i odświeżanie limitów. Pasek menu pokazuje procent **pozostałego** limitu aktywnego konta: np. **91%** dla jednego okna lub **5h: 40% · 7d: 80%** dla obu. Wartości aktualizują się po każdym odświeżeniu limitów (automatycznie co minutę) oraz przy przełączeniu konta. Podczas odczytu pozostaje ostatni wynik; brak aktywnego konta, brak danych lub błąd odczytu oznacza **—%**. Procenty w całej aplikacji są prezentowane bez miejsc po przecinku. Rozwinięte menu pokazuje aktywne konto, pozostałe limity i terminy resetów bez otwierania okna. Kliknij je, aby wybrać **Pokaż okno**, **Schowaj okno** lub **Zakończ Codex Sub Switcher**. Ponowne pokazanie okna z menu paska przywraca ikonę w Docku. Dopiero **Zakończ** lub **⌘Q** zatrzymuje proxy. Żółty przycisk zachowuje standardową minimalizację macOS do Docka. Jeśli utworzenie ikony tray’a zawiedzie, zamknięcie okna nadal kończy aplikację, aby nie zostawić jej bez dostępu do sterowania.
 
 ### Bez zmiany konfiguracji
 
@@ -52,6 +52,14 @@ Od tego momentu **nowo uruchamiane zwykłe `codex` z dowolnego katalogu** używa
 - Wycofane lub nieważne logowanie wymaga ponownego dodania konta. Odświeżanie tokenów jest automatyczne, z zapisem rotowanego refresh tokenu i jednym ponowieniem po HTTP 401, zanim zacznie płynąć odpowiedź.
 - **Importuj konto CLI** obsługuje magazyn `file`. To migracja istniejącego logowania: nie używaj jednocześnie jego kopii w starych procesach CLI i proxy, ponieważ odświeżanie może rotować wspólny refresh token. Do niezależnego równoległego użycia wybierz **Dodaj konto**. `keyring`, `auto` i `ephemeral` nie są importowane.
 - Proxy obejmuje ruch do dostawcy modelu. Nie zastępuje tożsamości używanej przez inne usługi Codex, np. zadania cloud i konektory.
+
+## Powiadomienia o odnowieniu limitów
+
+Po udanym odświeżeniu aplikacja porównuje użycie każdego konta z jego poprzednim udanym odczytem. Gdy użycie danego okna spada z wartości większej od 0 do dokładnie 0%, wysyła powiadomienie systemowe z adresem konta i nazwami odnowionych limitów. Dotyczy to również nieaktywnych kont i pracy ze schowanym oknem. Kliknięcie powiadomienia pokazuje okno aplikacji.
+
+Pierwszy odczyt po uruchomieniu ustala punkt odniesienia. Kolejne odczyty 0% nie powtarzają powiadomienia; nowy wzrost i spadek do zera może wywołać następne. Błąd odczytu, brak okna limitu i sam upływ terminu resetu nie wywołują powiadomienia. Ręczny restart wykonany w aplikacji, także oczekujący na potwierdzenie wyniku, jest pomijany. Porównanie wykrywa zaobserwowany spadek — nie rozstrzyga, czy był to reset planowy, czy dodatkowe odnowienie przez usługę.
+
+Powiadomienia macOS wymagają uruchomienia paczki **Codex Sub Switcher.app** oraz zgody systemowej na powiadomienia tej aplikacji. Przy pierwszej próbie wysłania macOS poprosi o zgodę; ustawienia można później zmienić w **Ustawienia systemowe → Powiadomienia → Codex Sub Switcher**. Przy `cargo run` powiadomienia systemowe są wyłączone przez GPUI.
 
 ## Ręczne restarty limitów
 

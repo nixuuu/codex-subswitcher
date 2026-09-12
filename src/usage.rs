@@ -54,6 +54,23 @@ impl Usage {
             .iter()
             .flat_map(|r| r.primary_window.iter().chain(r.secondary_window.iter()))
     }
+
+    /// Compare reported values, not reset deadlines or primary/secondary positions.
+    pub fn silent_resets_since(&self, previous: &Self) -> Vec<String> {
+        if self.pending_reset || previous.pending_reset {
+            return Vec::new();
+        }
+        self.windows()
+            .filter(|window| {
+                window.used_percent == 0.0
+                    && previous.windows().any(|old| {
+                        old.limit_window_seconds == window.limit_window_seconds
+                            && old.used_percent > 0.0
+                    })
+            })
+            .map(Window::label)
+            .collect()
+    }
 }
 impl Window {
     pub fn label(&self) -> String {
@@ -148,5 +165,66 @@ mod tests {
             w.reset_label(DateTime::from_timestamp(1001, 0).unwrap())
                 .contains("oczekiwanie")
         );
+    }
+
+    fn reported(windows: &[(i64, f32)]) -> Usage {
+        let window = |index: usize| {
+            windows
+                .get(index)
+                .map(|&(seconds, used)| json!({"limit_window_seconds":seconds,"used_percent":used}))
+        };
+        Usage::parse(
+            &serde_json::to_vec(&json!({"rate_limit":{
+                "primary_window":window(0), "secondary_window":window(1)
+            }}))
+            .unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn silent_reset_matches_window_duration_even_when_positions_change() {
+        let previous = reported(&[(18000, 32.0), (604800, 89.0)]);
+        let current = reported(&[(604800, 0.0), (18000, 0.0)]);
+        assert_eq!(
+            current.silent_resets_since(&previous),
+            ["Weekly · 7 dni", "5h"]
+        );
+        assert_eq!(
+            reported(&[(604800, 0.0)]).silent_resets_since(&previous),
+            ["Weekly · 7 dni"]
+        );
+    }
+
+    #[test]
+    fn silent_reset_requires_reported_positive_to_exact_zero_transition() {
+        let previous = reported(&[(18000, 32.0)]);
+        for current in [
+            reported(&[]),
+            reported(&[(604800, 0.0)]),
+            reported(&[(18000, 0.01)]),
+            reported(&[(18000, 32.0)]),
+            reported(&[(18000, 90.0)]),
+        ] {
+            assert!(current.silent_resets_since(&previous).is_empty());
+        }
+        let zero = reported(&[(18000, 0.0)]);
+        assert!(zero.silent_resets_since(&zero).is_empty());
+        assert!(zero.silent_resets_since(&reported(&[])).is_empty());
+        assert_eq!(
+            zero.silent_resets_since(&reported(&[(18000, 0.01)])),
+            ["5h"]
+        );
+    }
+
+    #[test]
+    fn pending_manual_reset_is_not_a_silent_reset() {
+        let mut previous = reported(&[(18000, 32.0)]);
+        let mut current = reported(&[(18000, 0.0)]);
+        previous.pending_reset = true;
+        assert!(current.silent_resets_since(&previous).is_empty());
+        previous.pending_reset = false;
+        current.pending_reset = true;
+        assert!(current.silent_resets_since(&previous).is_empty());
     }
 }

@@ -54,7 +54,7 @@ impl Switcher {
                     .small()
                     .value(limit.used_percent)
                     .accessibility_label(format!(
-                        "{}: {:.1}% użyte",
+                        "{}: {:.0}% użyte",
                         limit.label(),
                         limit.used_percent
                     ))

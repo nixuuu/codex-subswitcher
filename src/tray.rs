@@ -9,6 +9,7 @@ gpui_kit::actions!(switcher_tray, [Show, Hide, Quit]);
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Status {
+    pub title: String,
     pub account: String,
     pub lines: Vec<String>,
 }
@@ -34,6 +35,33 @@ pub fn hide(cx: &mut App) {
     crate::dock::hide();
 }
 
+fn title_for(view: Option<&crate::UsageView>) -> String {
+    let Some(data) = view
+        .filter(|view| view.error.is_none())
+        .and_then(|view| view.data.as_ref())
+    else {
+        return "—%".into();
+    };
+    let mut windows = data.windows().collect::<Vec<_>>();
+    windows.sort_by_key(|window| window.limit_window_seconds);
+    match windows.as_slice() {
+        [] => "—%".into(),
+        [window] => format!("{:.0}%", 100.0 - window.used_percent),
+        _ => windows
+            .iter()
+            .map(|window| {
+                let label = if window.limit_window_seconds == 604800 {
+                    "7d".into()
+                } else {
+                    window.label()
+                };
+                format!("{label}: {:.0}%", 100.0 - window.used_percent)
+            })
+            .collect::<Vec<_>>()
+            .join(" · "),
+    }
+}
+
 pub(super) fn status_for(
     account: Option<&crate::accounts::Account>,
     view: Option<&crate::UsageView>,
@@ -42,6 +70,7 @@ pub(super) fn status_for(
 ) -> Status {
     let Some(account) = account else {
         return Status {
+            title: "—%".into(),
             account: "Nie wybrano konta".into(),
             lines: vec!["Wybierz konto w oknie aplikacji".into()],
         };
@@ -50,9 +79,9 @@ pub(super) fn status_for(
     if let Some(data) = view.and_then(|v| v.data.as_ref()) {
         for limit in data.windows() {
             lines.push(format!(
-                "{}: {:.1}% użyte",
+                "{}: {:.0}% pozostało",
                 limit.label(),
-                limit.used_percent
+                100.0 - limit.used_percent
             ));
             lines.push(limit.reset_label(now));
         }
@@ -94,6 +123,7 @@ pub(super) fn status_for(
         ));
     }
     Status {
+        title: title_for(view),
         account: format!("{} · {}", account.email, account.plan),
         lines,
     }
@@ -125,6 +155,7 @@ pub fn update(status: Status, cx: &mut App) {
         &tray.actions[2],
     ]);
     if let Ok(menu) = Menu::with_items(&items) {
+        tray._icon.set_title(Some(&status.title));
         tray._icon.set_menu(Some(Box::new(menu)));
         let _ = tray._icon.set_tooltip(Some(format!(
             "Codex Sub Switcher\n{}\n{}",
@@ -141,7 +172,7 @@ pub fn install(cx: &mut App) -> anyhow::Result<()> {
     let quit = MenuItem::new("Zakończ Codex Sub Switcher", true, None);
     let menu = Menu::with_items(&[&show, &hide, &PredefinedMenuItem::separator(), &quit])?;
     let icon = TrayIconBuilder::new()
-        .with_title("⇄")
+        .with_title("—%")
         .with_tooltip("Codex Sub Switcher")
         .with_menu(Box::new(menu))
         .build()?;
@@ -194,7 +225,55 @@ pub fn install(cx: &mut App) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::status_for;
+    use super::{status_for, title_for};
+
+    fn view(windows: &[(i64, f32)]) -> crate::UsageView {
+        let window = |index: usize| {
+            windows.get(index).map(|&(seconds, used)| {
+                serde_json::json!({"limit_window_seconds":seconds,"used_percent":used})
+            })
+        };
+        let data = crate::usage::Usage::parse(
+            &serde_json::to_vec(&serde_json::json!({"rate_limit":{
+                "primary_window":window(0), "secondary_window":window(1)
+            }}))
+            .unwrap(),
+        )
+        .unwrap();
+        crate::UsageView {
+            data: Some(data),
+            checked: Some(chrono::Utc::now()),
+            error: None,
+        }
+    }
+
+    #[test]
+    fn title_shows_remaining_limits_in_duration_order_as_whole_percentages() {
+        assert_eq!(
+            title_for(Some(&view(&[(604800, 20.0), (18000, 60.0)]))),
+            "5h: 40% · 7d: 80%"
+        );
+        assert_eq!(
+            title_for(Some(&view(&[(18000, 100.0), (604800, 0.0)]))),
+            "5h: 0% · 7d: 100%"
+        );
+        assert_eq!(
+            title_for(Some(&view(&[(18000, 59.6), (604800, 20.4)]))),
+            "5h: 40% · 7d: 80%"
+        );
+        assert_eq!(title_for(Some(&view(&[(604800, 9.0)]))), "91%");
+    }
+
+    #[test]
+    fn title_does_not_invent_a_percentage_for_missing_or_failed_reads() {
+        assert_eq!(title_for(None), "—%");
+        assert_eq!(title_for(Some(&crate::UsageView::default())), "—%");
+        assert_eq!(title_for(Some(&view(&[]))), "—%");
+        let mut stale = view(&[(18000, 60.0)]);
+        stale.error = Some("offline".into());
+        assert_eq!(title_for(Some(&stale)), "—%");
+    }
+
     #[test]
     fn tray_shows_only_reported_windows_and_marks_stale_values() {
         let account = crate::accounts::Account {
@@ -209,12 +288,13 @@ mod tests {
             error: Some("offline".into()),
         };
         let status = status_for(Some(&account), Some(&view), false, chrono::Utc::now());
+        assert_eq!(status.title, "—%");
         assert!(status.account.contains("demo@example.test"));
         assert!(
             status
                 .lines
                 .iter()
-                .any(|s| s.contains("Weekly") && s.contains("73.0%"))
+                .any(|s| s.contains("Weekly") && s.contains("27% pozostało"))
         );
         assert!(!status.lines.iter().any(|s| s.starts_with("5h")));
         assert!(status.lines.iter().any(|s| s.contains("nieaktualne")));
@@ -226,6 +306,32 @@ mod tests {
         );
         let empty = status_for(None, Some(&view), false, chrono::Utc::now());
         assert_eq!(empty.account, "Nie wybrano konta");
-        assert!(!empty.lines.iter().any(|s| s.contains("73.0%")));
+        assert_eq!(empty.title, "—%");
+        assert!(!empty.lines.iter().any(|s| s.contains("27%")));
+    }
+
+    #[test]
+    fn switching_accounts_updates_title_and_loading_keeps_last_read() {
+        let first = crate::accounts::Account {
+            id: "a".repeat(64),
+            email: "first@example.test".into(),
+            plan: "pro".into(),
+        };
+        let second = crate::accounts::Account {
+            id: "b".repeat(64),
+            email: "second@example.test".into(),
+            plan: "pro".into(),
+        };
+        let now = chrono::Utc::now();
+        let first_status = status_for(Some(&first), Some(&view(&[(18000, 60.0)])), true, now);
+        assert_eq!(first_status.title, "40%");
+        let second_status = status_for(Some(&second), Some(&view(&[(604800, 9.0)])), false, now);
+        assert_eq!(second_status.title, "91%");
+        assert!(second_status.account.contains("second@example.test"));
+        assert_eq!(status_for(Some(&second), None, true, now).title, "—%");
+        assert_eq!(
+            status_for(None, Some(&view(&[(18000, 60.0)])), false, now).title,
+            "—%"
+        );
     }
 }

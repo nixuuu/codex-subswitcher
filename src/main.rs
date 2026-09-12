@@ -29,6 +29,27 @@ struct UsageView {
     checked: Option<chrono::DateTime<chrono::Utc>>,
     error: Option<String>,
 }
+impl UsageView {
+    fn apply(&mut self, result: Result<usage::Usage, String>) -> Vec<String> {
+        match result {
+            Ok(data) => {
+                let resets = self
+                    .data
+                    .as_ref()
+                    .map(|previous| data.silent_resets_since(previous))
+                    .unwrap_or_default();
+                self.data = Some(data);
+                self.checked = Some(chrono::Utc::now());
+                self.error = None;
+                resets
+            }
+            Err(error) => {
+                self.error = Some(error);
+                Vec::new()
+            }
+        }
+    }
+}
 struct Switcher {
     store: Store,
     snapshot: Snapshot,
@@ -209,17 +230,23 @@ impl Switcher {
                 match result {
                     Ok(results) => {
                         for (id, result) in results {
-                            if !this.snapshot.accounts.iter().any(|a| a.id == id) {
+                            let Some(account) = this.snapshot.accounts.iter().find(|a| a.id == id)
+                            else {
                                 continue;
-                            }
-                            let view = this.usage.entry(id).or_default();
-                            match result {
-                                Ok(data) => {
-                                    view.data = Some(data);
-                                    view.checked = Some(chrono::Utc::now());
-                                    view.error = None;
-                                }
-                                Err(error) => view.error = Some(error),
+                            };
+                            let resets = this.usage.entry(id.clone()).or_default().apply(result);
+                            if !resets.is_empty() {
+                                cx.show_system_notification(SystemNotification {
+                                    tag: format!("silent-reset-{id}").into(),
+                                    title: "Limity konta zostały odnowione".into(),
+                                    body: format!(
+                                        "{} · {}: użycie spadło do 0% po odświeżeniu.",
+                                        account.email,
+                                        resets.join(", ")
+                                    )
+                                    .into(),
+                                    actions: Vec::new(),
+                                });
                             }
                         }
                     }
@@ -230,6 +257,7 @@ impl Switcher {
                         }
                     }
                 }
+                this.sync_tray(cx);
                 cx.notify();
             });
         }));
@@ -388,6 +416,12 @@ fn main() {
     let app = gpui_kit::application().with_assets(gpui_kit::assets::Assets);
     app.on_reopen(tray::show);
     app.run(move |cx| {
+        cx.set_app_identity("tech.itsol.codex-sub-switcher", "Codex Sub Switcher");
+        cx.on_system_notification_response(|response, cx| {
+            if response.tag.starts_with("silent-reset-") {
+                tray::show(cx);
+            }
+        });
         gpui_kit::init(cx);
         let mode = if matches!(
             cx.window_appearance(),
@@ -437,4 +471,67 @@ fn main() {
         })
         .detach();
     });
+}
+
+#[cfg(test)]
+mod usage_view_tests {
+    use super::UsageView;
+    use crate::usage;
+
+    fn reported(used: f32) -> usage::Usage {
+        usage::Usage::parse(
+            &serde_json::to_vec(&serde_json::json!({
+                "rate_limit":{"primary_window":{
+                    "limit_window_seconds":18000,"used_percent":used
+                }}
+            }))
+            .unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn notifies_once_per_transition_and_rearms_after_usage_increases() {
+        let mut view = UsageView::default();
+        assert!(view.apply(Ok(reported(0.0))).is_empty());
+        assert!(view.apply(Ok(reported(25.0))).is_empty());
+        assert_eq!(view.apply(Ok(reported(0.0))), ["5h"]);
+        assert!(view.apply(Ok(reported(0.0))).is_empty());
+        assert!(view.apply(Ok(reported(70.0))).is_empty());
+        assert_eq!(view.apply(Ok(reported(0.0))), ["5h"]);
+    }
+
+    #[test]
+    fn failed_refresh_preserves_baseline_until_successful_read() {
+        let mut view = UsageView::default();
+        assert!(view.apply(Ok(reported(25.0))).is_empty());
+        let checked = view.checked;
+        assert!(view.apply(Err("offline".into())).is_empty());
+        assert_eq!(view.checked, checked);
+        assert_eq!(
+            view.data
+                .as_ref()
+                .unwrap()
+                .windows()
+                .next()
+                .unwrap()
+                .used_percent,
+            25.0
+        );
+        assert!(view.error.is_some());
+        assert_eq!(view.apply(Ok(reported(0.0))), ["5h"]);
+        assert!(view.error.is_none());
+        assert!(view.apply(Err("offline".into())).is_empty());
+        assert!(view.apply(Ok(reported(0.0))).is_empty());
+    }
+
+    #[test]
+    fn accounts_have_independent_baselines() {
+        let mut first = UsageView::default();
+        let mut second = UsageView::default();
+        assert!(first.apply(Ok(reported(25.0))).is_empty());
+        assert!(second.apply(Ok(reported(0.0))).is_empty());
+        assert_eq!(first.apply(Ok(reported(0.0))), ["5h"]);
+        assert!(second.apply(Ok(reported(0.0))).is_empty());
+    }
 }
