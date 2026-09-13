@@ -75,6 +75,19 @@ impl Usage {
     }
 }
 impl Window {
+    /// Linear weekly budget, not a prediction based on recent request history.
+    pub fn weekly_budget(&self, now: DateTime<Utc>) -> Option<f32> {
+        if self.limit_window_seconds != 604800 {
+            return None;
+        }
+        let reset = DateTime::from_timestamp(self.reset_at?, 0)?;
+        let seconds = (reset - now).num_seconds();
+        if !(1..=604800).contains(&seconds) {
+            return None;
+        }
+        Some(seconds as f32 / 604800. * 100.)
+    }
+
     pub fn remaining_percent(&self) -> f32 {
         100.0 - self.used_percent
     }
@@ -115,6 +128,25 @@ impl Window {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn weekly_budget_tracks_time_remaining_and_rejects_invalid_periods() {
+        let mut w = Window {
+            used_percent: 60.,
+            limit_window_seconds: 604800,
+            reset_at: Some(2_000_000_000),
+        };
+        let at = |seconds| DateTime::from_timestamp(seconds, 0).unwrap();
+        assert_eq!(w.weekly_budget(at(2_000_000_000 - 302400)), Some(50.));
+        assert_eq!(w.weekly_budget(at(2_000_000_000 - 604800)), Some(100.));
+        assert_eq!(w.weekly_budget(at(2_000_000_000)), None);
+        assert_eq!(w.weekly_budget(at(2_000_000_001)), None);
+        assert_eq!(w.weekly_budget(at(2_000_000_000 - 604801)), None);
+        w.limit_window_seconds = 18000;
+        assert_eq!(w.weekly_budget(at(1_999_999_999)), None);
+        w.limit_window_seconds = 604800;
+        w.reset_at = None;
+        assert_eq!(w.weekly_budget(at(1_999_999_999)), None);
+    }
     fn window(seconds: i64) -> serde_json::Value {
         json!({"used_percent":42.5,"limit_window_seconds":seconds,"reset_at":2000000000})
     }
