@@ -4,9 +4,10 @@ use super::*;
 impl Switcher {
     pub(super) fn connection_panel(&self, cx: &Context<Self>) -> Div {
         let muted = cx.theme().muted_foreground;
-        let content = stack().pt(px(tokens::SPACE_CONTENT))
+        let content = stack().pt_3()
+            .child(div().text_color(muted).child("These options connect new sessions in every terminal that uses this proxy. Account changes apply from the next request; requests already in progress keep their account."))
             .child(div().text_color(muted).child("Copy the command and run it in your project directory. Add resume to continue a conversation."))
-            .child(div().flex().gap(px(tokens::SPACE_CONTENT)).items_center()
+            .child(div().flex().gap_3().items_center()
                 .child(div().flex_1().min_w_0().text_color(muted).child("codex-switch [resume]"))
                 .child(action("copy", "Copy command")
                     .disabled(self.proxy.is_none() || self.command.is_empty() || !self.show_connection)
@@ -16,11 +17,11 @@ impl Switcher {
                         this.error = false;
                         cx.notify();
                     }))))
-            .child(div().flex().items_center().justify_between().gap(px(tokens::SPACE_CONTENT))
+            .child(div().flex().items_center().justify_between().gap_3()
                 .child(div().flex_1().min_w_0().text_color(muted).child(if self.snapshot.config_enabled {
                     "The codex command uses the proxy"
                 } else { "Optional: enable the proxy for the codex command" }))
-                .child(action("config", if self.snapshot.config_backup { "Restore config.toml" } else { "Enable in config.toml" })
+                .child(action("config", if self.snapshot.config_backup { "Restore config.toml…" } else { "Enable in config.toml…" })
                     .disabled(self.busy || self.proxy.is_none() || !self.show_connection)
                     .on_click(cx.listener(|this, _, window, cx| this.confirm_config(window, cx)))))
             .child(div().text_xs().text_color(muted).child("CLI sessions started earlier with the codex command do not use the proxy. The account shown by /status may come from the CLI's own credentials."));
@@ -31,7 +32,7 @@ impl Switcher {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .gap(px(tokens::SPACE_CONTENT))
+                    .gap_3()
                     .child(
                         div()
                             .min_w_0()

@@ -28,15 +28,16 @@ impl Render for Switcher {
             }))
             .text_color(cx.theme().foreground)
             .font_family(tokens::FONT_FAMILY)
-            .text_size(px(tokens::TEXT_BODY))
+            .text_base()
             .flex()
             .flex_col()
             .child(
                 stack()
                     .flex_shrink_0()
-                    .p(px(tokens::SPACE_SECTION))
-                    .gap(px(tokens::SPACE_CONTENT))
+                    .p_4()
+                    .gap_3()
                     .child(self.panel_header(cx))
+                    .when(self.proxy.is_none(), |d| d.child(self.proxy_notice(cx)))
                     .when(!self.status.is_empty() && (self.error || self.busy), |d| {
                         d.child(self.operation_status(cx))
                     }),
@@ -51,9 +52,9 @@ impl Render for Switcher {
                     .child(
                         stack()
                             .flex_shrink_0()
-                            .px(px(tokens::SPACE_SECTION))
-                            .pb(px(tokens::SPACE_SECTION))
-                            .gap(px(tokens::SPACE_INLINE))
+                            .px_4()
+                            .pb_4()
+                            .gap_2()
                             .when(rows.is_empty(), |d| d.child(self.empty_accounts(cx)))
                             .children(rows),
                     ),
@@ -90,26 +91,23 @@ impl Switcher {
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
             .font_family(tokens::FONT_FAMILY)
-            .text_size(px(tokens::TEXT_BODY))
+            .text_base()
             .child(
                 div()
                     .id("settings-page")
                     .size_full()
                     .overflow_y_scroll()
                     .track_scroll(scroll)
-                    .child(
-                        stack()
-                            .p(px(tokens::PAGE_PADDING))
-                            .gap(px(tokens::SPACE_SECTION))
-                            .child(self.app_header(cx))
-                            .child(self.service_status(cx))
-                            .child(self.settings_accounts(cx))
-                            .when(!self.status.is_empty(), |d| {
-                                d.child(self.operation_status(cx))
-                            })
-                            .child(self.connection_panel(cx))
-                            .child(self.app_footer(cx)),
-                    ),
+                    .p_5()
+                    .flex()
+                    .flex_col()
+                    .gap_4()
+                    .child(self.app_header(cx))
+                    .child(self.service_status(cx))
+                    .child(self.settings_accounts(cx))
+                    .child(self.settings_operation_status(cx))
+                    .child(self.connection_panel(cx))
+                    .child(self.app_footer(cx)),
             )
             .children(Root::render_sheet_layer(window, cx))
             .children(Root::render_dialog_layer(window, cx))

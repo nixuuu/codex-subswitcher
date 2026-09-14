@@ -58,7 +58,7 @@ pub fn enable(store: &Store, port: u16, binary: &Path) -> Result<()> {
     let record_path = store.root.join("config-patch.json");
     ensure!(
         !record_path.exists(),
-        "A previous configuration change exists. Choose Restore config.toml first."
+        "A previous configuration change exists. Choose Restore config.toml… first."
     );
     ensure!(
         doc.get("model_providers")

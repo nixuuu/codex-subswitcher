@@ -2,18 +2,10 @@
 use std::time::Duration;
 
 pub const FONT_FAMILY: &str = ".AppleSystemUIFont";
-pub const TEXT_BODY: f32 = 14.;
-pub const TEXT_CAPTION: f32 = 12.;
-pub const TEXT_HEADING: f32 = 20.;
-pub const CONTROL_HEIGHT: f32 = 32.;
-pub const ICON_CONTROL_HEIGHT: f32 = 24.;
-pub const CONTROL_PADDING: f32 = 12.;
 pub const RADIUS: f32 = 6.;
 pub const PANEL_RADIUS: f32 = 8.;
-pub const SPACE_INLINE: f32 = 8.;
-pub const SPACE_CONTENT: f32 = 12.;
-pub const SPACE_SECTION: f32 = 16.;
-pub const PAGE_PADDING: f32 = 20.;
+pub const BASE_FONT_SIZE: f32 = 14.;
+// Window placement is an AppKit/display boundary expressed in physical pixels.
 pub const PANEL_WIDTH: f32 = 460.;
 pub const PANEL_MAX_HEIGHT: f32 = 538.;
 // A theme-specific scrim keeps text legible over contrasting desktop content.

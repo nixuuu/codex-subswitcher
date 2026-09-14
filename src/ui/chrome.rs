@@ -21,22 +21,60 @@ impl Switcher {
             .flex()
             .items_center()
             .justify_between()
-            .gap(px(tokens::SPACE_INLINE))
-            .px(px(tokens::SPACE_SECTION))
-            .py(px(tokens::SPACE_CONTENT))
+            .gap_2()
+            .px_4()
+            .py_3()
             .border_t_1()
             .border_color(theme.border)
-            .text_size(px(tokens::TEXT_CAPTION))
+            .text_xs()
             .child(
                 div()
-                    .text_color(theme.foreground)
-                    .child(if self.proxy.is_some() {
-                        "Proxy active"
-                    } else {
-                        "Proxy unavailable"
-                    }),
+                    .flex()
+                    .flex_col()
+                    .gap_0p5()
+                    .child(
+                        div()
+                            .text_color(theme.foreground)
+                            .child(if self.proxy.is_some() {
+                                "Proxy running"
+                            } else {
+                                "Proxy unavailable"
+                            }),
+                    )
+                    .child(div().text_color(theme.muted_foreground).child(updated)),
             )
-            .child(div().text_color(theme.muted_foreground).child(updated))
+            .child(
+                compact_action("connect-terminal", "Connect terminal…").on_click(|_, _, cx| {
+                    cx.defer(|cx| {
+                        windows::show_settings_section(windows::SettingsSection::Connection, cx)
+                    })
+                }),
+            )
+    }
+
+    pub(super) fn proxy_notice(&self, cx: &Context<Self>) -> Div {
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_2()
+            .p_3()
+            .rounded(cx.theme().radius)
+            .bg(cx.theme().muted)
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_color(cx.theme().muted_foreground)
+                    .child("Activate is unavailable because the proxy is not running."),
+            )
+            .child(
+                compact_action("proxy-info", "Connection info…").on_click(|_, _, cx| {
+                    cx.defer(|cx| {
+                        windows::show_settings_section(windows::SettingsSection::Connection, cx)
+                    })
+                }),
+            )
     }
 
     pub(super) fn settings_accounts(&self, cx: &Context<Self>) -> Div {
@@ -48,13 +86,13 @@ impl Switcher {
             .child(
                 div()
                     .flex()
-                    .gap(px(tokens::SPACE_INLINE))
+                    .gap_2()
                     .child(
-                        action("open-accounts", "Open accounts")
+                        action("open-accounts", "Open accounts…")
                             .on_click(|_, _, cx| cx.defer(windows::show_panel)),
                     )
                     .child(
-                        action("import", "Import from CLI")
+                        action("import", "Import from CLI…")
                             .disabled(self.busy)
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.work(
@@ -71,12 +109,35 @@ impl Switcher {
     pub(super) fn empty_accounts(&self, cx: &Context<Self>) -> Div {
         stack()
             .py_8()
-            .gap(px(tokens::SPACE_INLINE))
+            .gap_2()
             .child(div().text_lg().child("Add your first account"))
             .child(
                 div()
                     .text_color(cx.theme().muted_foreground)
                     .child("Sign in to an account or import your CLI credentials."),
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap_2()
+                    .child(
+                        compact_action("empty-add", "Add account…")
+                            .disabled(self.busy)
+                            .loading(self.login_pending)
+                            .on_click(cx.listener(|this, _, _, cx| this.begin_login(cx))),
+                    )
+                    .child(
+                        compact_action("empty-import", "Import in Settings…").on_click(
+                            |_, _, cx| {
+                                cx.defer(|cx| {
+                                    windows::show_settings_section(
+                                        windows::SettingsSection::Accounts,
+                                        cx,
+                                    )
+                                })
+                            },
+                        ),
+                    ),
             )
     }
 
@@ -84,8 +145,8 @@ impl Switcher {
         div()
             .flex()
             .justify_between()
-            .gap(px(tokens::SPACE_CONTENT))
-            .text_size(px(tokens::TEXT_CAPTION))
+            .gap_3()
+            .text_xs()
             .text_color(cx.theme().muted_foreground)
             .child("Switching accounts applies to the next request.")
             .child(format!(
@@ -99,14 +160,14 @@ impl Switcher {
             .flex()
             .items_center()
             .justify_between()
-            .gap(px(tokens::SPACE_SECTION))
+            .gap_4()
             .child(
                 stack()
                     .gap_1()
                     .min_w_0()
                     .child(
                         div()
-                            .text_size(px(tokens::TEXT_HEADING))
+                            .text_xl()
                             .font_weight(FontWeight::SEMIBOLD)
                             .child("Settings"),
                     )
@@ -116,14 +177,40 @@ impl Switcher {
                             .child("Connection, notifications and diagnostics"),
                     ),
             )
-            .child(action("theme", "Toggle theme").on_click(|_, window, cx| {
-                let mode = if cx.theme().is_dark() {
-                    ThemeMode::Light
-                } else {
-                    ThemeMode::Dark
-                };
-                palette::change(mode, Some(window), cx);
-            }))
+            .child(
+                stack()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::MEDIUM)
+                            .child("Appearance"),
+                    )
+                    .child(
+                        gpui_kit::component::radio::RadioGroup::horizontal("appearance")
+                            .flex_none()
+                            .selected_index(Some(if cx.theme().is_dark() { 1 } else { 0 }))
+                            .child(
+                                gpui_kit::component::radio::Radio::new("appearance-light")
+                                    .label("Light"),
+                            )
+                            .child(
+                                gpui_kit::component::radio::Radio::new("appearance-dark")
+                                    .label("Dark"),
+                            )
+                            .on_change(|index, window, cx| {
+                                palette::change(
+                                    if *index == 0 {
+                                        ThemeMode::Light
+                                    } else {
+                                        ThemeMode::Dark
+                                    },
+                                    Some(window),
+                                    cx,
+                                );
+                            }),
+                    ),
+            )
     }
 
     pub(super) fn service_status(&self, cx: &Context<Self>) -> Div {
@@ -142,11 +229,11 @@ impl Switcher {
                 .unwrap_or("Refreshes automatically every minute".into())
         };
         stack()
-            .child(div().flex().items_center().justify_between().gap(px(tokens::SPACE_CONTENT))
-                .child(badge(if self.proxy.is_some() { "Proxy active" } else { "Proxy unavailable" },
+            .child(div().flex().items_center().justify_between().gap_3()
+                .child(badge(if self.proxy.is_some() { "Proxy running" } else { "Proxy unavailable" },
                     if self.proxy.is_some() { theme.success } else { theme.danger }, theme.muted))
                 .child(div().text_xs().text_color(theme.muted_foreground).child(refresh_text)))
-            .child(div().flex().items_center().gap(px(tokens::SPACE_CONTENT))
+            .child(div().flex().items_center().gap_3()
                 .child(div().flex_1().min_w_0().text_xs().text_color(theme.muted_foreground).child(notifications::status(cx)))
                 .child(action("test-notifications", "Test notification")
                     .disabled(!notifications::can_test(cx))
@@ -163,7 +250,7 @@ impl Switcher {
             .flex()
             .items_center()
             .justify_between()
-            .gap(px(tokens::SPACE_CONTENT))
+            .gap_3()
             .child(
                 div()
                     .font_weight(FontWeight::MEDIUM)
@@ -173,7 +260,7 @@ impl Switcher {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(tokens::SPACE_INLINE))
+                    .gap_2()
                     .child(
                         icon_action(
                             "refresh",
@@ -181,6 +268,7 @@ impl Switcher {
                             "Refresh accounts",
                         )
                         .disabled(self.busy || self.usage_loading)
+                        .loading(self.usage_loading)
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.work(
                                 "Refreshing…",
@@ -190,27 +278,19 @@ impl Switcher {
                             )
                         })),
                     )
-                    .child(
-                        compact_action("add", "Add account")
-                            .primary()
-                            .disabled(self.busy)
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.cancel = Arc::new(AtomicBool::new(false));
-                                let cancel = this.cancel.clone();
-                                this.login_pending = true;
-                                this.work(
-                                    "Complete sign-in in your browser.",
-                                    "Account added.",
-                                    move |s| launcher::login(&s, cancel),
-                                    cx,
-                                );
-                            })),
-                    )
+                    .when(!self.snapshot.accounts.is_empty(), |actions| {
+                        actions.child(
+                            compact_action("add", "Add account…")
+                                .disabled(self.busy)
+                                .loading(self.login_pending)
+                                .on_click(cx.listener(|this, _, _, cx| this.begin_login(cx))),
+                        )
+                    })
                     .child(
                         icon_action(
                             "settings",
                             gpui_kit::component::IconName::Settings,
-                            "Settings",
+                            "Settings…",
                         )
                         .on_click(|_, _, cx| cx.defer(windows::show_settings)),
                     ),
@@ -222,9 +302,9 @@ impl Switcher {
         div()
             .flex()
             .items_center()
-            .gap(px(tokens::SPACE_CONTENT))
-            .p(px(tokens::SPACE_CONTENT))
-            .rounded(px(tokens::RADIUS))
+            .gap_3()
+            .p_3()
+            .rounded(theme.radius)
             .bg(theme.muted)
             .child(
                 div()
@@ -246,5 +326,23 @@ impl Switcher {
                     },
                 )))
             })
+    }
+
+    pub(super) fn settings_operation_status(&self, cx: &Context<Self>) -> Div {
+        div().when(!self.status.is_empty(), |d| {
+            d.child(self.operation_status(cx))
+        })
+    }
+
+    fn begin_login(&mut self, cx: &mut Context<Self>) {
+        self.cancel = Arc::new(AtomicBool::new(false));
+        let cancel = self.cancel.clone();
+        self.login_pending = true;
+        self.work(
+            "Complete sign-in in your browser.",
+            "Account added.",
+            move |store| launcher::login(&store, cancel),
+            cx,
+        );
     }
 }

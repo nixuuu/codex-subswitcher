@@ -244,11 +244,11 @@ impl Store {
         let _lock = self.lock()?;
         self.check_config(None)?;
         let c = read_credential(&self.codex_home.join("auth.json"))?
-            .context("No saved CLI credentials. Choose Add account.")?;
+            .context("No saved CLI credentials. Choose Add account…")?;
         self.check_config(Some(&c))?;
         ensure!(
             !self.account_path(&c.account.id)?.exists(),
-            "This account is already saved. Use Add account if you need to sign in again."
+            "This account is already saved. Use Add account… if you need to sign in again."
         );
         self.save(&c)?;
         self.snapshot()

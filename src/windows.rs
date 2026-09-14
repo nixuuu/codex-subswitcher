@@ -1,7 +1,7 @@
 //! The menu-bar panel and settings share one long-lived application model.
 use crate::{Switcher, dock, tray, ui};
 use gpui_kit::{
-    component::{Root, WindowExt},
+    component::{Root, Theme, WindowExt},
     *,
 };
 
@@ -10,6 +10,7 @@ pub struct Windows {
     panel: Option<WindowHandle<Root>>,
     panel_host: Option<Entity<PanelHost>>,
     settings: Option<WindowHandle<Root>>,
+    settings_host: Option<Entity<SettingsHost>>,
     dismissed_at: Option<std::time::Instant>,
 }
 impl Global for Windows {}
@@ -20,6 +21,7 @@ pub fn install(state: Entity<Switcher>, cx: &mut App) {
         panel: None,
         panel_host: None,
         settings: None,
+        settings_host: None,
         dismissed_at: None,
     });
 }
@@ -60,9 +62,15 @@ pub fn toggle_panel(cx: &mut App) {
 }
 
 /// Clamp the panel to the usable display, including off-origin secondary monitors.
-fn panel_bounds(anchor: Bounds<Pixels>, visible: Bounds<Pixels>, height: f32) -> Bounds<Pixels> {
+fn panel_bounds(
+    anchor: Bounds<Pixels>,
+    visible: Bounds<Pixels>,
+    width: f32,
+    height: f32,
+) -> Bounds<Pixels> {
+    // Margins and tray anchoring are physical AppKit geometry.
     let margin = px(8.);
-    let width = px(ui::tokens::PANEL_WIDTH).min(visible.size.width - margin * 2.);
+    let width = px(width).min(visible.size.width - margin * 2.);
     let height = px(height).min(visible.size.height - margin * 2.);
     let x = (anchor.center().x - width / 2.)
         .max(visible.left() + margin)
@@ -107,7 +115,13 @@ pub fn show_panel(cx: &mut App) {
         )
     });
     // The first layout measures content and replaces this provisional height.
-    let bounds = panel_bounds(anchor, visible, 232.);
+    let scale = Theme::global(cx).font_size.as_f32() / ui::tokens::BASE_FONT_SIZE;
+    let bounds = panel_bounds(
+        anchor,
+        visible,
+        ui::tokens::PANEL_WIDTH * scale,
+        232. * scale,
+    );
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         display_id: Some(display.id()),
@@ -153,16 +167,24 @@ pub(crate) fn fit_panel_to_content(scroll: &ScrollHandle, window: &mut Window, c
         .map(|display| display.visible_bounds().bottom() - bounds.top() - px(8.))
         .unwrap_or(px(ui::tokens::PANEL_MAX_HEIGHT));
     let chrome = bounds.size.height - scroll.bounds().size.height;
-    let height = fitted_panel_height(chrome + content.size.height, available);
-    if (height - bounds.size.height).abs() >= px(1.) {
-        window.resize(size(bounds.size.width, height));
+    let scale = window.rem_size().as_f32() / ui::tokens::BASE_FONT_SIZE;
+    let height = fitted_panel_height(chrome + content.size.height, available, scale);
+    let width = px(ui::tokens::PANEL_WIDTH * scale).min(
+        window
+            .display(cx)
+            .map(|display| display.visible_bounds().size.width - px(16.))
+            .unwrap_or(px(ui::tokens::PANEL_WIDTH * scale)),
+    );
+    if (height - bounds.size.height).abs() >= px(1.) || (width - bounds.size.width).abs() >= px(1.)
+    {
+        window.resize(size(width, height));
     }
 }
 
-fn fitted_panel_height(content: Pixels, available: Pixels) -> Pixels {
+fn fitted_panel_height(content: Pixels, available: Pixels, scale: f32) -> Pixels {
     content
         .ceil()
-        .min(px(ui::tokens::PANEL_MAX_HEIGHT))
+        .min(px(ui::tokens::PANEL_MAX_HEIGHT * scale))
         .min(available)
         .max(px(1.))
 }
@@ -262,28 +284,57 @@ impl Render for PanelHost {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum SettingsSection {
+    Accounts,
+    Connection,
+}
+
 pub fn show_settings(cx: &mut App) {
-    let Some(windows) = cx.try_global::<Windows>() else {
+    open_settings(None, cx);
+}
+
+pub(crate) fn show_settings_section(section: SettingsSection, cx: &mut App) {
+    open_settings(Some(section), cx);
+}
+
+fn open_settings(section: Option<SettingsSection>, cx: &mut App) {
+    let Some((state, settings, settings_host)) = cx.try_global::<Windows>().map(|windows| {
+        (
+            windows.state.clone(),
+            windows.settings,
+            windows.settings_host.clone(),
+        )
+    }) else {
         return;
     };
-    if let Some(handle) = windows.settings
+    if matches!(section, Some(SettingsSection::Connection)) {
+        state.update(cx, |state, cx| {
+            state.show_connection = true;
+            cx.notify();
+        });
+    }
+    if let Some(handle) = settings
         && handle
             .update(cx, |_, window, _| window.activate_window())
             .is_ok()
     {
+        if let (Some(host), Some(section)) = (settings_host, section) {
+            host.update(cx, |host, cx| host.request(section, cx));
+        }
         dock::show();
         cx.activate(true);
         close_panel(cx);
         return;
     }
-    let state = cx.global::<Windows>().state.clone();
-    let bounds = Bounds::centered(None, size(px(740.), px(660.)), cx);
+    let scale = Theme::global(cx).font_size.as_f32() / ui::tokens::BASE_FONT_SIZE;
+    let bounds = Bounds::centered(None, size(px(740. * scale), px(660. * scale)), cx);
     dock::show();
     cx.activate(true);
     match cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
-            window_min_size: Some(size(px(680.), px(560.))),
+            window_min_size: Some(size(px(680. * scale), px(560. * scale))),
             titlebar: Some(TitlebarOptions {
                 title: Some("Codex Sub Switcher — Settings".into()),
                 ..Default::default()
@@ -293,6 +344,7 @@ pub fn show_settings(cx: &mut App) {
         |window, cx| {
             window.on_window_should_close(cx, |_, cx| {
                 cx.global_mut::<Windows>().settings = None;
+                cx.global_mut::<Windows>().settings_host = None;
                 if tray::available(cx) {
                     dock::hide();
                 }
@@ -303,9 +355,11 @@ pub fn show_settings(cx: &mut App) {
                 SettingsHost {
                     state,
                     scroll: ScrollHandle::new(),
+                    requested_section: section,
                     _subscription: subscription,
                 }
             });
+            cx.global_mut::<Windows>().settings_host = Some(view.clone());
             cx.new(|cx| Root::new(view, window, cx))
         },
     ) {
@@ -320,10 +374,23 @@ pub fn show_settings(cx: &mut App) {
 struct SettingsHost {
     state: Entity<Switcher>,
     scroll: ScrollHandle,
+    requested_section: Option<SettingsSection>,
     _subscription: Subscription,
+}
+impl SettingsHost {
+    fn request(&mut self, section: SettingsSection, cx: &mut Context<Self>) {
+        self.requested_section = Some(section);
+        cx.notify();
+    }
 }
 impl Render for SettingsHost {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if let Some(section) = self.requested_section.take() {
+            self.scroll.scroll_to_top_of_item(match section {
+                SettingsSection::Accounts => 2,
+                SettingsSection::Connection => 4,
+            });
+        }
         self.state.update(cx, |state, cx| {
             state.settings_view(&self.scroll, window, cx)
         })
@@ -337,11 +404,15 @@ mod tests {
 
     #[test]
     fn panel_fits_content_until_height_or_display_limit() {
-        assert_eq!(fitted_panel_height(px(180.), px(900.)), px(180.));
-        assert_eq!(fitted_panel_height(px(410.), px(900.)), px(410.));
-        assert_eq!(fitted_panel_height(px(700.), px(900.)), px(538.));
-        assert_eq!(fitted_panel_height(px(700.), px(320.)), px(320.));
-        assert_eq!(fitted_panel_height(px(180.), px(320.)), px(180.));
+        assert_eq!(fitted_panel_height(px(180.), px(900.), 1.), px(180.));
+        assert_eq!(fitted_panel_height(px(410.), px(900.), 1.), px(410.));
+        assert_eq!(fitted_panel_height(px(700.), px(900.), 1.), px(538.));
+        assert_eq!(fitted_panel_height(px(700.), px(320.), 1.), px(320.));
+        assert_eq!(fitted_panel_height(px(180.), px(320.), 1.), px(180.));
+        assert_eq!(
+            fitted_panel_height(px(900.), px(1200.), 18. / 14.),
+            px(538. * 18. / 14.)
+        );
     }
 
     #[test]
@@ -366,7 +437,7 @@ mod tests {
         let visible = Bounds::new(point(px(-1440.), px(24.)), size(px(1440.), px(876.)));
         for x in [-1430., -20.] {
             let anchor = Bounds::new(point(px(x), px(0.)), size(px(20.), px(24.)));
-            let panel = panel_bounds(anchor, visible, 640.);
+            let panel = panel_bounds(anchor, visible, 460., 640.);
             assert!(panel.left() >= visible.left());
             assert!(panel.right() <= visible.right());
             assert!(panel.top() >= visible.top());
@@ -380,6 +451,7 @@ mod tests {
         let panel = panel_bounds(
             Bounds::new(point(px(700.), px(0.)), size(px(40.), px(24.))),
             visible,
+            460.,
             640.,
         );
         assert_eq!(panel.size.height, px(484.));

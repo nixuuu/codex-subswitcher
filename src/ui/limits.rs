@@ -1,6 +1,33 @@
 //! Reusable capacity meter; no application-state or request ownership.
 use super::*;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BudgetStatus {
+    Below,
+    On,
+    Within,
+}
+
+impl BudgetStatus {
+    fn from_difference(difference: f32) -> Self {
+        if difference < -1.0 {
+            Self::Below
+        } else if difference > 1.0 {
+            Self::Within
+        } else {
+            Self::On
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Below => "Faster than weekly budget",
+            Self::On => "On pace with weekly budget",
+            Self::Within => "Slower than weekly budget",
+        }
+    }
+}
+
 pub(super) fn meter(
     account_id: &str,
     index: usize,
@@ -11,33 +38,41 @@ pub(super) fn meter(
     let theme = cx.theme();
     let remaining = limit.remaining_percent();
     let budget = limit.weekly_budget(now);
+    let reset = limit
+        .reset_at
+        .and_then(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0));
     let color = if remaining <= 10.0 {
         theme.danger
     } else {
         theme.success
     };
-    let reset = limit
+    let reset_text = limit
         .reset_at
-        .and_then(|t| chrono::DateTime::from_timestamp(t, 0));
-    let reset_text = match reset {
-        Some(at) if at > now => format!(
-            "{}",
-            at.with_timezone(&chrono::Local).format("%b %-d · %H:%M")
-        ),
-        Some(_) => "Waiting for reset".into(),
-        None => "Reset time unavailable".into(),
-    };
+        .and_then(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0))
+        .map(|at| {
+            if at > now {
+                at.with_timezone(&chrono::Local)
+                    .format("%b %-d · %H:%M")
+                    .to_string()
+            } else {
+                "Waiting for reset".into()
+            }
+        })
+        .unwrap_or_else(|| "Reset time unavailable".into());
+
     stack()
         .min_w_0()
         .gap_0p5()
-        .text_size(px(tokens::TEXT_CAPTION))
+        .text_xs()
         .child(
             div()
                 .flex()
-                .justify_between()
-                .gap(px(tokens::SPACE_INLINE))
+                .items_center()
+                .gap_2()
                 .child(
                     div()
+                        .w_12()
+                        .flex_shrink_0()
                         .text_color(theme.muted_foreground)
                         .child(limit.label()),
                 )
@@ -51,6 +86,9 @@ pub(super) fn meter(
                 )
                 .child(
                     div()
+                        .w_16()
+                        .flex_shrink_0()
+                        .text_right()
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(theme.foreground)
                         .child(format!("{remaining:.0}% left")),
@@ -74,58 +112,81 @@ pub(super) fn meter(
                     bar.children((1..7).map(|day| {
                         div()
                             .absolute()
-                            .left(relative(day as f32 / 7.))
+                            .left(relative(day as f32 / 7.0))
                             .top_0()
-                            .w(px(1.))
+                            // Physical hairline separates days on the capacity scale.
+                            .w(px(1.0))
                             .h_full()
                             .bg(theme.foreground.opacity(0.55))
                     }))
                     .child(
                         div()
                             .absolute()
-                            .left(relative(expected / 100.))
-                            .top(px(-2.))
-                            .w(px(2.))
-                            .h(px(10.))
+                            .left(relative(expected / 100.0))
+                            .top_0()
+                            // Distinct physical marker for the current linear budget.
+                            .w(px(2.0))
+                            .h_2()
                             .bg(theme.foreground),
                     )
                 }),
         )
         .when_some(budget.zip(reset), |view, (expected, reset)| {
             let difference = remaining - expected;
-            let status = if difference < -1. {
-                format!("Fast usage · {:.0} pp below budget", -difference)
-            } else if difference > 1. {
-                format!("Within budget · {:.0} pp spare", difference)
-            } else {
-                "On budget".into()
-            };
             view.child(
                 div()
                     .relative()
-                    .h(px(18.))
+                    .h_5()
                     .text_color(theme.muted_foreground)
                     .child(div().absolute().left_0().child("Reset"))
                     .children((1..7).map(|day| {
-                        let at = reset - chrono::Duration::days(day);
                         div()
                             .absolute()
-                            .left(relative(day as f32 / 7.))
-                            .ml(px(-11.))
-                            .child(at.with_timezone(&chrono::Local).format("%a").to_string())
+                            // Center each label on its tick using the same fractional grid.
+                            .left(relative((day as f32 - 0.5) / 7.0))
+                            .w(relative(1.0 / 7.0))
+                            .text_center()
+                            .child(
+                                (reset - chrono::Duration::days(day))
+                                    .with_timezone(&chrono::Local)
+                                    .format("%a")
+                                    .to_string(),
+                            )
                     })),
             )
             .child(
                 div()
                     .flex()
+                    .flex_wrap()
                     .justify_between()
-                    .gap(px(tokens::SPACE_INLINE))
-                    .child(div().text_color(theme.foreground).child(status))
+                    .gap_x_2()
+                    .child(
+                        div()
+                            .text_color(if difference < -1.0 {
+                                theme.warning
+                            } else {
+                                theme.foreground
+                            })
+                            .child(BudgetStatus::from_difference(difference).label()),
+                    )
                     .child(
                         div()
                             .text_color(theme.muted_foreground)
-                            .child(format!("Now: {expected:.0}% budget")),
+                            .child(format!("Now: {expected:.0}% · {difference:+.0} pp")),
                     ),
             )
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BudgetStatus;
+
+    #[test]
+    fn weekly_budget_status_keeps_one_point_neutral_band() {
+        assert_eq!(BudgetStatus::from_difference(-1.01), BudgetStatus::Below);
+        assert_eq!(BudgetStatus::from_difference(-1.0), BudgetStatus::On);
+        assert_eq!(BudgetStatus::from_difference(1.0), BudgetStatus::On);
+        assert_eq!(BudgetStatus::from_difference(1.01), BudgetStatus::Within);
+    }
 }

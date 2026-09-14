@@ -4,6 +4,9 @@ use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::{App, Window, px, rgb, rgba};
 
 pub fn change(mode: ThemeMode, window: Option<&mut Window>, cx: &mut App) {
+    let current_window = window
+        .as_ref()
+        .map(|window| window.window_handle().window_id());
     Theme::change(mode, None, cx);
     let dark = mode.is_dark();
     let theme = Theme::global_mut(cx);
@@ -69,5 +72,10 @@ pub fn change(mode: ThemeMode, window: Option<&mut Window>, cx: &mut App) {
     Theme::sync_base(cx);
     if let Some(window) = window {
         window.refresh();
+    }
+    for handle in cx.windows() {
+        if Some(handle.window_id()) != current_window {
+            let _ = handle.update(cx, |_, window, _| window.refresh());
+        }
     }
 }

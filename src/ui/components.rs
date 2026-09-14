@@ -6,19 +6,13 @@ pub(super) fn action(id: impl Into<ElementId>, label: impl Into<SharedString>) -
     Button::new(id)
         .label(label)
         .secondary()
-        .with_size(Size::Size(px(tokens::CONTROL_HEIGHT)))
-        .h(px(tokens::CONTROL_HEIGHT))
-        .px(px(tokens::CONTROL_PADDING))
-        .text_size(px(tokens::TEXT_BODY))
-        .rounded(px(tokens::RADIUS))
+        .with_size(Size::Medium)
 }
 
 pub(super) fn compact_action(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Button {
     action(id, label)
         .with_variant(ButtonVariant::default())
-        .h(px(tokens::ICON_CONTROL_HEIGHT))
-        .px(px(tokens::SPACE_INLINE))
-        .text_size(px(tokens::TEXT_CAPTION))
+        .with_size(Size::Small)
 }
 
 pub(super) fn icon_action(
@@ -30,8 +24,7 @@ pub(super) fn icon_action(
     Button::new(id)
         .icon(icon)
         .ghost()
-        .with_size(Size::Size(px(tokens::ICON_CONTROL_HEIGHT)))
-        .rounded(px(tokens::RADIUS))
+        .with_size(Size::Small)
         .tooltip(label.clone())
         .accessibility_label(label)
 }
@@ -44,25 +37,29 @@ pub(super) fn dialog_actions(ok: impl Into<SharedString>, cancel: bool) -> Dialo
         .show_cancel(cancel)
 }
 
+pub(super) fn destructive_dialog_actions(ok: impl Into<SharedString>) -> DialogButtonProps {
+    dialog_actions(ok, true).ok_variant(ButtonVariant::Danger)
+}
+
 pub(super) fn badge(text: impl Into<SharedString>, color: Hsla, background: Hsla) -> Div {
     div()
-        .px(px(tokens::SPACE_INLINE))
+        .px_2()
         .py_0p5()
-        .rounded(px(tokens::RADIUS))
-        .text_size(px(tokens::TEXT_CAPTION))
+        .rounded_full()
+        .text_xs()
         .text_color(color)
         .bg(background)
         .child(text.into())
 }
 
 pub(super) fn stack() -> Div {
-    div().flex().flex_col().gap(px(tokens::SPACE_CONTENT))
+    div().flex().flex_col().gap_3()
 }
 
 pub(super) fn panel(cx: &App) -> Div {
     stack()
-        .p(px(tokens::SPACE_SECTION))
-        .rounded(px(tokens::PANEL_RADIUS))
+        .p_4()
+        .rounded(cx.theme().radius_lg)
         .border_1()
         .border_color(cx.theme().border)
 }

@@ -21,24 +21,24 @@ open 'dist/Codex Sub Switcher.app'
 
 For development, use `cargo run --locked`. The app bundle is signed ad hoc locally; it is not a notarized distribution release.
 
-1. Click **Add account** and complete the standard Codex sign-in in your browser. Repeat for another account. Each sign-in uses its own working directory and does not sign out your regular CLI.
+1. Click **Add account…** and complete the standard Codex sign-in in your browser. Repeat for another account. Each sign-in uses its own working directory and does not sign out your regular CLI. With no saved accounts, the panel also links directly to the import section in Settings.
 2. Click **Activate** next to the account you want to use. The selected account shows **Active**.
 3. Connect your terminal using one of the options below.
 4. When a limit is exhausted, click **Activate** next to another account. The next request will use it. The app does not switch accounts or retry generation automatically after a limit error.
 
 The app must remain running while you use the proxy. Left-click the menu-bar percentage to toggle the accounts panel. It opens below the status item, stays within the usable display bounds, and dismisses when focus leaves it or you press **Escape** (an open dialog handles Escape first). Accounts scroll within the panel; the header and refresh status remain visible. Closing the panel preserves the proxy, account operations, and limit refreshes. The menu bar shows the active account's **remaining** capacity: **91%** for a single window, or **5h: 40% · 7d: 80%** for both. Values update after each refresh (automatically every minute) and when switching accounts. The last result remains visible during a refresh; no active account, missing data, or a refresh error displays **—%**. All displayed percentages are whole numbers.
 
-The gear button or **⌘,** opens **Settings** with connection instructions, **Import from CLI**, notification testing, theme selection, and request counters. This is a separate, resizable application window with a Dock icon. Closing Settings returns to menu-bar operation. Right-click the menu-bar percentage for **Accounts**, **Settings…**, and **Quit Codex Sub Switcher**. Only **Quit** or **⌘Q** stops the proxy. If creating the menu-bar item fails, Settings opens as the regular app window and offers **Open accounts**; closing the last window then quits.
+The gear button or **⌘,** opens **Settings** with connection instructions, **Import from CLI…**, notification testing, an explicit Light/Dark Appearance choice, and request counters. The panel footer's **Connect terminal…** action opens the same window at expanded connection instructions. Settings is a separate, resizable application window with a Dock icon. Closing Settings returns to menu-bar operation. Right-click the menu-bar percentage for **Accounts**, **Settings…**, and **Quit Codex Sub Switcher**. Only **Quit** or **⌘Q** stops the proxy. If creating the menu-bar item fails, Settings opens as the regular app window and offers **Open accounts…**; closing the last window then quits.
 
 ### Connect without changing configuration
 
-In **Settings → Show instructions**, click **Copy command** and paste it into a terminal in your project directory. The `codex-switch` launcher forwards arguments to the real CLI. You can add `resume`, `resume --last`, or other standard Codex arguments.
+Use **Connect terminal…** in the panel footer, or choose **Show instructions** in Settings. Click **Copy command** and paste it into a terminal in your project directory. The `codex-switch` launcher forwards arguments to the real CLI. You can add `resume`, `resume --last`, or other standard Codex arguments.
 
 The regular `codex` command continues using its existing configuration. A process started outside the proxy needs to be stopped and resumed through the launcher once; subsequent account switches do not require a restart.
 
 ### Optional `config.toml` integration
 
-Click **Enable in config.toml** and confirm the change shown in the dialog. The app:
+Click **Enable in config.toml…** and confirm the change shown in the dialog. The app:
 
 - Creates a private configuration backup.
 - Changes the default `model_provider` to `subscription_switcher`.
@@ -48,7 +48,7 @@ Click **Enable in config.toml** and confirm the change shown in the dialog. The 
 
 Afterward, **new `codex` sessions started from any directory** use the proxy unless project configuration, the selected profile, or a `-c` argument overrides the provider. The change applies to the `CODEX_HOME` shown in the dialog.
 
-**Restore config.toml** restores the previous provider selection and removes the app's proxy section while preserving later unrelated edits. If the proxy section has been changed manually, the app refuses to overwrite it and retains the backup. Backups remain in the app's data directory. Restore the configuration before moving or removing the app, because it references the executable's absolute path.
+**Restore config.toml…** restores the previous provider selection and removes the app's proxy section while preserving later unrelated edits. If the proxy section has been changed manually, the app refuses to overwrite it and retains the backup. Backups remain in the app's data directory. Restore the configuration before moving or removing the app, because it references the executable's absolute path.
 
 ## Behavior and limitations
 
@@ -59,9 +59,9 @@ The native interface shares [design tokens and components](docs/design-system.md
 - Conversations, tools, files, and permissions remain with the CLI. The proxy does not modify history or saved sessions. A complete long-conversation scenario with compaction and switching between **two real accounts** still needs verification.
 - Each account row shows the plan saved at sign-in and the remaining capacity of the windows reported by the Codex limits service, such as 5h and weekly. **% left** and bar fill represent remaining capacity: 100% is full and 0% is empty. Bars and values are green above 10% and red at 10% or below. Available windows are never inferred from the plan.
 - Reset times use local dates and times. Passing a reset deadline does not restore capacity locally. Data refreshes at startup, after account operations, every minute after the previous refresh completes, and through **Refresh**. Errors preserve the last result with an outdated-data warning. Missing windows do not imply an unlimited subscription.
-- Footer counters only cover generation traffic through this proxy. CLI `/status` is not an authoritative source for the selected proxy account. Terminal connection instructions are under **Show instructions**.
+- Footer counters only cover generation traffic through this proxy. **Proxy running** means that the local service is available; it does not detect whether a terminal uses it. CLI `/status` is not an authoritative source for the selected proxy account.
 - Revoked or invalid credentials require adding the account again. Token refresh is automatic, persists rotated refresh tokens, and retries once after HTTP 401 before response streaming begins.
-- **Import from CLI** supports `file` credential storage. This migrates an existing sign-in: do not use copies of it simultaneously in old CLI processes and the proxy, because refreshing may rotate their shared refresh token. Use **Add account** for independent simultaneous sessions. `keyring`, `auto`, and `ephemeral` stores are not imported.
+- **Import from CLI…** supports `file` credential storage. This migrates an existing sign-in: do not use copies of it simultaneously in old CLI processes and the proxy, because refreshing may rotate their shared refresh token. Use **Add account…** for independent simultaneous sessions. `keyring`, `auto`, and `ephemeral` stores are not imported.
 - The proxy handles model-provider traffic. It does not replace the identity used by other Codex services, such as cloud tasks or connectors.
 
 ## Limit reset notifications
@@ -78,11 +78,11 @@ Permission status appears below the refresh information. **Test notification** c
 
 ## Manual limit resets
 
-Each compact account row shows the plan, number of reset credits, and reported limits. The chevron next to **Activate** / **Active** expands account details, including expiration dates and the reset button. Credits are ordered by their exact expiration time, with undated credits last. **Next to use** identifies the earliest-expiring eligible `codex_rate_limits` credit; expired, redeemed, and unknown types are excluded.
+Each compact account row shows the plan, number of reset credits, and reported limits. Without expanding the account, a weekly bar shows day ticks and weekday labels, the current even-usage budget marker, expected remaining capacity, and deviation in percentage points. **Faster than weekly budget**, **On pace with weekly budget**, or **Slower than weekly budget** compares consumption with an even weekly allowance using a one-percentage-point neutral band, not a forecast of recent request speed. The chevron next to **Activate** / **Active** expands account details, including the budget explanation, expiration dates, disabled reasons, and reset action. Credits are ordered by their exact expiration time, with undated credits last. **Next to use** identifies the earliest-expiring eligible `codex_rate_limits` credit; expired, redeemed, and unknown types are excluded.
 
-**Use reset** opens a confirmation naming the account and the selected credit's expiration date. The app sends the specific `credit_id` from the latest reading rather than relying on server ordering. If the credit expires or the selection changes while the dialog is open, confirmation is required again. Credits are never consumed or purchased automatically.
+**Use reset…** opens a destructive confirmation naming the account and the selected credit's expiration date. **Remove account…** also names the private account label and explains that removal does not cancel the subscription. The app sends the specific `credit_id` from the latest reading rather than relying on server ordering. If the credit expires or the selection changes while the dialog is open, confirmation is required again. Credits are never consumed or purchased automatically.
 
-After a network error, **Retry reset** uses the same credit ID and operation ID. The request is retained across launches until a recognized response arrives. New resets are blocked when expiration dates cannot be fetched, readings are outdated, or no eligible credit is available. Limits are fetched again after the operation; the UI does not restore percentages on its own.
+After a network error, **Retry reset…** uses the same credit ID and operation ID. The request is retained across launches until a recognized response arrives. New resets are blocked when expiration dates cannot be fetched, readings are outdated, or no eligible credit is available; the detail area names the matching reason and points to Refresh when it can recover the data. Limits are fetched again after the operation; the UI does not restore percentages on its own.
 
 [Expiration details](docs/reset-expirations.png) · [Confirmation dialog](docs/reset-confirmation.png) · [Earlier validation](docs/tray-resets-validation.md)
 
