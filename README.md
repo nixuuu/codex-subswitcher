@@ -21,7 +21,7 @@ open 'dist/Codex Sub Switcher.app'
 
 For development, use `cargo run --locked`. The app bundle is signed ad hoc locally; it is not a notarized distribution release.
 
-1. Click **Add account…** and complete the standard Codex sign-in in your browser. Repeat for another account. Each sign-in uses its own working directory and does not sign out your regular CLI. With no saved accounts, the panel also links directly to the import section in Settings.
+1. Click **Add account…** and choose **Sign in on this computer…** for the standard browser flow, or **Sign in on another computer…** to get a device sign-in link and one-time code. Use **Copy link and code**, send both to your other computer, open the link there, sign in to the new account, and enter the code. Keep the switcher running: the account is added here automatically. The code expires after 15 minutes; **Cancel sign-in** stops waiting. Device sign-in requires an up-to-date Codex CLI and device code login enabled in [ChatGPT security settings or workspace permissions](https://developers.openai.com/codex/auth/#preferred-device-code-authentication-beta). Repeat for another account. Each sign-in uses its own working directory and does not sign out your regular CLI. With no saved accounts, the panel also links directly to the import section in Settings.
 2. Click **Activate** next to the account you want to use. The selected account shows **Active**.
 3. Connect your terminal using one of the options below.
 4. When a limit is exhausted, click **Activate** next to another account. The next request will use it. The app does not switch accounts or retry generation automatically after a limit error.

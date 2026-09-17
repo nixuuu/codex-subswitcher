@@ -69,6 +69,9 @@ struct Switcher {
     poll: Option<Task<()>>,
     cancel: Arc<AtomicBool>,
     login_pending: bool,
+    login_progress: Option<std::sync::mpsc::Receiver<launcher::DeviceLogin>>,
+    device_login: Option<launcher::DeviceLogin>,
+    login_copied: bool,
     proxy: Option<proxy::Proxy>,
     counters: (usize, usize, usize),
     command: SharedString,
@@ -110,6 +113,9 @@ impl Switcher {
             poll: None,
             cancel: Arc::new(AtomicBool::new(false)),
             login_pending: false,
+            login_progress: None,
+            device_login: None,
+            login_copied: false,
             proxy: proxy.ok(),
             counters: (0, 0, 0),
             command: command.into(),
@@ -130,6 +136,11 @@ impl Switcher {
                     .await;
                 if entity
                     .update(cx, |this, cx| {
+                        if let Some(details) = this.login_progress.as_ref().and_then(|rx| rx.try_recv().ok()) {
+                            this.device_login = Some(details);
+                            this.status = "Open the link on your other computer, sign in, and enter the code. This app will add the account automatically. The code expires after 15 minutes.".into();
+                            cx.notify();
+                        }
                         this.sync_tray(cx);
                         let now = chrono::Utc::now();
                         if now.timestamp() / 60 != this.now.timestamp() / 60 {
@@ -361,6 +372,9 @@ impl Switcher {
             let _ = entity.update(cx, |this, cx| {
                 this.busy = false;
                 this.login_pending = false;
+                this.login_progress = None;
+                this.device_login = None;
+                this.login_copied = false;
                 match result {
                     Ok(snapshot) => {
                         this.expanded_accounts

@@ -2,6 +2,7 @@ use crate::accounts::{Store, atomic_write, private_dir};
 use crate::proxy::Connection;
 use anyhow::{Context, Result, bail, ensure};
 use std::{
+    io::Read,
     os::unix::{fs::PermissionsExt, process::CommandExt},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -87,40 +88,141 @@ impl Drop for LoginChild {
         let _ = self.0.wait();
     }
 }
-pub fn login(store: &Store, cancel: Arc<AtomicBool>) -> Result<crate::accounts::Snapshot> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum LoginMode {
+    Browser,
+    Device,
+}
+
+#[derive(Clone)]
+pub struct DeviceLogin {
+    code: String,
+}
+
+impl DeviceLogin {
+    pub fn url(&self) -> &'static str {
+        "https://auth.openai.com/codex/device"
+    }
+
+    pub fn code(&self) -> &str {
+        &self.code
+    }
+
+    pub fn copy_text(&self) -> String {
+        format!("{}\nOne-time code: {}", self.url(), self.code)
+    }
+
+    // Codex prints a human-readable prompt, including ANSI color sequences.
+    // Only accept the official device URL and the complete, labeled code line.
+    fn parse(output: &str) -> Option<Self> {
+        let mut plain = String::new();
+        let mut chars = output.chars();
+        while let Some(ch) = chars.next() {
+            if ch == '\u{1b}' {
+                if chars.next()? != '[' {
+                    return None;
+                }
+                for ch in chars.by_ref() {
+                    if ('@'..='~').contains(&ch) {
+                        break;
+                    }
+                }
+            } else {
+                plain.push(ch);
+            }
+        }
+        if !plain
+            .lines()
+            .any(|line| line.trim() == "https://auth.openai.com/codex/device")
+        {
+            return None;
+        }
+        let mut lines = plain.split_inclusive('\n');
+        lines.find(|line| line.contains("Enter this one-time code"))?;
+        let line = lines.find(|line| !line.trim().is_empty())?;
+        if !line.ends_with('\n') {
+            return None;
+        }
+        let code = line.trim();
+        if !(6..=32).contains(&code.len())
+            || !code
+                .bytes()
+                .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'-')
+        {
+            return None;
+        }
+        Some(Self { code: code.into() })
+    }
+}
+
+pub fn login(
+    store: &Store,
+    cancel: Arc<AtomicBool>,
+    mode: LoginMode,
+    progress: std::sync::mpsc::Sender<DeviceLogin>,
+) -> Result<crate::accounts::Snapshot> {
     private_dir(&store.root)?;
     let home = tempfile::Builder::new()
         .prefix("login-")
         .tempdir_in(&store.root)?;
     private_dir(home.path())?;
+    // Keep CLI output private and temporary; never publish arbitrary log content.
+    let output = tempfile::NamedTempFile::new_in(home.path())?;
+    let mut command = Command::new(codex_binary()?);
+    command.args(["-c", "cli_auth_credentials_store=\"file\"", "login"]);
+    if mode == LoginMode::Device {
+        command.arg("--device-auth");
+    }
     let mut child = LoginChild(
-        Command::new(codex_binary()?)
+        command
             .process_group(0)
             .env("CODEX_HOME", home.path())
             .env_remove("OPENAI_API_KEY")
             .env_remove("CODEX_API_KEY")
             .env_remove("CODEX_ACCESS_TOKEN")
-            .args(["-c", "cli_auth_credentials_store=\"file\"", "login"])
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
+            .stdout(Stdio::from(output.reopen()?))
             .stderr(Stdio::null())
             .spawn()
             .context("Could not start sign-in.")?,
     );
     let start = Instant::now();
+    let timeout = match mode {
+        LoginMode::Browser => Duration::from_secs(300),
+        LoginMode::Device => Duration::from_secs(15 * 60),
+    };
+    let mut prompt_sent = false;
     loop {
         if cancel.load(Ordering::Relaxed) {
             bail!("Sign-in canceled.");
         }
-        if start.elapsed() > Duration::from_secs(300) {
+        if start.elapsed() > timeout {
             bail!("Sign-in timed out. Try again.");
         }
         if let Some(status) = child.0.try_wait()? {
             ensure!(
                 status.success(),
-                "Sign-in failed. Check whether another sign-in process is using port 1455."
+                "{}",
+                match mode {
+                    LoginMode::Browser =>
+                        "Sign-in failed. Check whether another sign-in process is using port 1455.",
+                    LoginMode::Device =>
+                        "Device sign-in failed or expired. Enable device code login in ChatGPT security settings (or ask your workspace admin), check your connection, and try again with an up-to-date Codex CLI.",
+                }
             );
             return store.import_from(&home.path().join("auth.json"));
+        }
+        if mode == LoginMode::Device && !prompt_sent {
+            let mut text = String::new();
+            output.reopen()?.take(64 * 1024).read_to_string(&mut text)?;
+            if let Some(details) = DeviceLogin::parse(&text) {
+                let _ = progress.send(details);
+                prompt_sent = true;
+            } else if start.elapsed() > Duration::from_secs(60) {
+                bail!(
+                    "Could not read the device sign-in link and code. Check your connection and update Codex CLI, then try again."
+                );
+            }
         }
         std::thread::sleep(Duration::from_millis(100));
     }
@@ -207,4 +309,53 @@ pub fn run_cli(store: &Store, args: impl Iterator<Item = std::ffi::OsString>) ->
         .args(args)
         .exec();
     Err(error.into())
+}
+
+#[cfg(test)]
+mod login_tests {
+    use super::DeviceLogin;
+
+    const PROMPT: &str = "Welcome to Codex [v0.114.0]\n\
+        1. Open this link in your browser and sign in to your account\n\
+           \x1b[94mhttps://auth.openai.com/codex/device\x1b[0m\n\
+        2. Enter this one-time code \x1b[90m(expires in 15 minutes)\x1b[0m\n\
+           \x1b[94mABCD-12345\x1b[0m\n\
+        Continue only if you started this login in Codex.\n";
+
+    #[test]
+    fn extracts_colored_device_prompt_and_copies_only_link_and_code() {
+        let details = DeviceLogin::parse(PROMPT).unwrap();
+        assert_eq!(details.code(), "ABCD-12345");
+        assert_eq!(
+            details.copy_text(),
+            "https://auth.openai.com/codex/device\nOne-time code: ABCD-12345"
+        );
+    }
+
+    #[test]
+    fn waits_for_the_complete_code_line() {
+        let end = PROMPT.find("ABCD-12345").unwrap();
+        for offset in 0.."ABCD-12345\x1b[0m".len() {
+            assert!(DeviceLogin::parse(&PROMPT[..end + offset]).is_none());
+        }
+        assert!(DeviceLogin::parse(&PROMPT[..end + "ABCD-12345\x1b[0m\n".len()]).is_some());
+    }
+
+    #[test]
+    fn supports_plain_output_and_crlf() {
+        let plain = "https://auth.openai.com/codex/device\r\n\r\n2. Enter this one-time code\r\n\r\nABCD-12345\r\n";
+        assert_eq!(DeviceLogin::parse(plain).unwrap().code(), "ABCD-12345");
+    }
+
+    #[test]
+    fn rejects_other_urls_and_error_output() {
+        assert!(DeviceLogin::parse(&PROMPT.replace("auth.openai.com", "example.com")).is_none());
+        assert!(
+            DeviceLogin::parse(&PROMPT.replace("ABCD-12345", "Error: access denied")).is_none()
+        );
+        assert!(
+            DeviceLogin::parse("https://auth.openai.com/oauth/authorize?state=secret\n").is_none()
+        );
+        assert!(DeviceLogin::parse("Device sign-in failed\n").is_none());
+    }
 }

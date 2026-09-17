@@ -1,7 +1,33 @@
 //! Page header, account actions, and operational feedback.
 use super::*;
+use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
 
 impl Switcher {
+    fn add_account_menu(&self, id: &'static str, cx: &Context<Self>) -> impl IntoElement {
+        let entity = cx.entity().downgrade();
+        compact_action(id, "Add account…")
+            .disabled(self.busy)
+            .loading(self.login_pending)
+            .dropdown_menu(move |menu, _, _| {
+                let local = entity.clone();
+                let remote = entity.clone();
+                menu.item(PopupMenuItem::new("Sign in on this computer…").on_click(
+                    move |_, _, cx| {
+                        let _ = local.update(cx, |this, cx| {
+                            this.begin_login(launcher::LoginMode::Browser, cx)
+                        });
+                    },
+                ))
+                .item(
+                    PopupMenuItem::new("Sign in on another computer…").on_click(move |_, _, cx| {
+                        let _ = remote.update(cx, |this, cx| {
+                            this.begin_login(launcher::LoginMode::Device, cx)
+                        });
+                    }),
+                )
+            })
+    }
+
     pub(super) fn panel_footer(&self, cx: &Context<Self>) -> Div {
         let theme = cx.theme();
         let checked = self.usage.values().filter_map(|v| v.checked).min();
@@ -120,12 +146,7 @@ impl Switcher {
                 div()
                     .flex()
                     .gap_2()
-                    .child(
-                        compact_action("empty-add", "Add account…")
-                            .disabled(self.busy)
-                            .loading(self.login_pending)
-                            .on_click(cx.listener(|this, _, _, cx| this.begin_login(cx))),
-                    )
+                    .child(self.add_account_menu("empty-add", cx))
                     .child(
                         compact_action("empty-import", "Import in Settings…").on_click(
                             |_, _, cx| {
@@ -279,12 +300,7 @@ impl Switcher {
                         })),
                     )
                     .when(!self.snapshot.accounts.is_empty(), |actions| {
-                        actions.child(
-                            compact_action("add", "Add account…")
-                                .disabled(self.busy)
-                                .loading(self.login_pending)
-                                .on_click(cx.listener(|this, _, _, cx| this.begin_login(cx))),
-                        )
+                        actions.child(self.add_account_menu("add", cx))
                     })
                     .child(
                         icon_action(
@@ -301,7 +317,7 @@ impl Switcher {
         let theme = cx.theme();
         div()
             .flex()
-            .items_center()
+            .flex_col()
             .gap_3()
             .p_3()
             .rounded(theme.radius)
@@ -317,14 +333,46 @@ impl Switcher {
                     })
                     .child(self.status.clone()),
             )
+            .when_some(self.device_login.as_ref(), |d, details| {
+                d.child(
+                    stack()
+                        .gap_2()
+                        .child(details.url())
+                        .child(format!("One-time code: {}", details.code()))
+                        .child(
+                            action(
+                                "copy-device-login",
+                                if self.login_copied {
+                                    "Link and code copied"
+                                } else {
+                                    "Copy link and code"
+                                },
+                            )
+                            .disabled(self.cancel.load(Ordering::Relaxed))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                if let Some(details) = &this.device_login {
+                                    cx.write_to_clipboard(ClipboardItem::new_string(
+                                        details.copy_text(),
+                                    ));
+                                    this.login_copied = true;
+                                    cx.notify();
+                                }
+                            })),
+                        ),
+                )
+            })
             .when(self.login_pending, |d| {
-                d.child(action("cancel", "Cancel sign-in").on_click(cx.listener(
-                    |this, _, _, cx| {
-                        this.cancel.store(true, Ordering::Relaxed);
-                        this.status = "Canceling sign-in…".into();
-                        cx.notify();
-                    },
-                )))
+                d.child(
+                    action("cancel", "Cancel sign-in")
+                        .disabled(self.cancel.load(Ordering::Relaxed))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.cancel.store(true, Ordering::Relaxed);
+                            this.login_progress = None;
+                            this.device_login = None;
+                            this.status = "Canceling sign-in…".into();
+                            cx.notify();
+                        })),
+                )
             })
     }
 
@@ -334,14 +382,24 @@ impl Switcher {
         })
     }
 
-    fn begin_login(&mut self, cx: &mut Context<Self>) {
+    fn begin_login(&mut self, mode: launcher::LoginMode, cx: &mut Context<Self>) {
+        if self.busy {
+            return;
+        }
         self.cancel = Arc::new(AtomicBool::new(false));
         let cancel = self.cancel.clone();
         self.login_pending = true;
+        let (progress, receiver) = std::sync::mpsc::channel();
+        self.login_progress = Some(receiver);
+        self.device_login = None;
+        self.login_copied = false;
         self.work(
-            "Complete sign-in in your browser.",
+            match mode {
+                launcher::LoginMode::Browser => "Complete sign-in in your browser.",
+                launcher::LoginMode::Device => "Preparing a sign-in link and one-time code…",
+            },
             "Account added.",
-            move |store| launcher::login(&store, cancel),
+            move |store| launcher::login(&store, cancel, mode, progress),
             cx,
         );
     }
